@@ -1,6 +1,6 @@
 {
   "name": "smallorange-gateway",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Simple HTTP gateway for lambdas",
   "main": "index.js",
   "scripts": {

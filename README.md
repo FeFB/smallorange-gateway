@@ -74,13 +74,14 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 				}
 			}
 		};
-
-		export ACCESS_KEY_ID = 'xxxxx'; // (required)
-		export SECRET_ACCESS_KEY = 'xxxxx'; // (required)
-		export REGION = 'xxxxx'; // (optional)
-		export REDIS_URL = 'xxxxx'; // (optional)
-		export LOG_GROUP = 'xxxxx'; // (optional)
-		export PORT = 8080; // (optional)
+		
+		// used vars
+		process.env.ACCESS_KEY_ID = 'xxxxx'; // (required)
+		process.env.SECRET_ACCESS_KEY = 'xxxxx'; // (required)
+		process.env.REGION = 'xxxxx'; // (optional)
+		process.env.REDIS_URL = 'xxxxx'; // (optional)
+		process.env.LOG_GROUP = 'xxxxx'; // (optional)
+		process.env.PORT = 8080; // (optional)
 
 		const gateway = new Gateway({
 			logGroup: 'myAppLogs', // || env.LOG_GROUP

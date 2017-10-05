@@ -84,7 +84,7 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 		process.env.PORT = 8080; // (optional)
 		process.env.CACHE_TTL = null; // time in seconds to live (optional)
 		process.env.CACHE_TTR = 7200; // time in seconds to refresh (optional)
-		process.env.CACHE_TIMEOUT = 1000; // max ms to wait before route to the origin (optional)
+		process.env.CACHE_TIMEOUT = 1000; // time in ms to wait before route to the origin (optional)
 
 		const gateway = new Gateway({
 			logGroup: 'myAppLogs', // || env.LOG_GROUP

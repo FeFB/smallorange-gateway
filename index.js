@@ -56,6 +56,7 @@ module.exports = class Gateway {
 			logError: this.logger.log.bind(this.logger),
 			ttl: process.env.CACHE_TTL || null,
 			ttr: process.env.CACHE_TTR || 7200,
+			timeout: process.env.CACHE_TIMEOUT || 1000,
 			redis: new Redis({
 				connection: {
 					url: redisUrl

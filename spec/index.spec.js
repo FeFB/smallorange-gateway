@@ -14,7 +14,6 @@ const {
 chai.use(sinonChai);
 
 const expect = chai.expect;
-
 const lambdas = {
 	'/': {
 		name: 'images'
@@ -25,6 +24,10 @@ const lambdas = {
 		base64Encoded: true,
 		headers: {
 			'content-type': 'image/png'
+		},
+		params: {
+			width: 200,
+			height: 200
 		}
 	}
 };
@@ -36,7 +39,7 @@ describe('index.js', () => {
 
 	beforeEach(() => {
 		req = {
-			url: 'http://localhost/param1/param2?a=1&b=2',
+			url: 'http://localhost/param1/param2?width=10&height=20',
 			headers: {
 				host: 'http://localhost'
 			},
@@ -48,23 +51,21 @@ describe('index.js', () => {
 			write: sinon.stub(),
 			end: sinon.stub(),
 		};
+
+		sinon.stub(http.Server.prototype, 'listen');
+
+		gateway = new Gateway({
+			logGroup: 'spec',
+			lambdas,
+			redisUrl: 'redis://localhost:6380'
+		});
+	});
+
+	afterEach(() => {
+		http.Server.prototype.listen.restore();
 	});
 
 	describe('constructor', () => {
-		beforeEach(() => {
-			sinon.spy(http.Server.prototype, 'listen');
-
-			gateway = new Gateway({
-				logGroup: 'spec',
-				lambdas,
-				redisUrl: 'redis://localhost:6380'
-			});
-		});
-
-		afterEach(() => {
-			http.Server.prototype.listen.restore();
-		});
-
 		it('should throw if no lambdas provided', () => {
 			expect(() => new Gateway()).to.throw('no lambdas provided.');
 		});
@@ -73,6 +74,22 @@ describe('index.js', () => {
 			expect(() => new Gateway({
 				lambdas
 			})).to.throw('no logGroup provided.');
+		});
+
+		it('should throw if shouldCache isn\'t a function', () => {
+			expect(() => new Gateway({
+				lambdas,
+				logGroup: 'spec',
+				shouldCache: null
+			})).to.throw('shouldCache must be a function.');
+		});
+
+		it('should throw if getCacheKey isn\'t a function', () => {
+			expect(() => new Gateway({
+				lambdas,
+				logGroup: 'spec',
+				getCacheKey: null
+			})).to.throw('getCacheKey must be a function.');
 		});
 
 		it('should have logger', () => {
@@ -90,6 +107,14 @@ describe('index.js', () => {
 			});
 
 			expect(gateway.cacheDriver).to.be.null
+		});
+
+		it('should have shouldCache', () => {
+			expect(gateway.shouldCache).to.be.a('function');
+		});
+
+		it('should have getCacheKey', () => {
+			expect(gateway.getCacheKey).to.be.a('function');
 		});
 
 		it('should have bodyParser', () => {
@@ -122,7 +147,7 @@ describe('index.js', () => {
 			sinon.stub(gateway.lambda, 'invoke')
 				.callsArgWith(1, null, {
 					Payload: JSON.stringify({
-						a: 1
+						width: 10
 					})
 				});
 		});
@@ -146,13 +171,13 @@ describe('index.js', () => {
 
 		it('should call lambda.invoke with custom args', done => {
 			gateway.invoke('name', {
-					a: 1
+					width: 10
 				}, 'version')
 				.subscribe(null, null, () => {
 					expect(gateway.lambda.invoke).to.have.been.calledWithExactly({
 						FunctionName: 'name',
 						Payload: JSON.stringify({
-							a: 1
+							width: 10
 						}),
 						Qualifier: 'version'
 					}, sinon.match.func);
@@ -165,7 +190,7 @@ describe('index.js', () => {
 			gateway.invoke('name')
 				.subscribe(response => {
 					expect(response).to.deep.equal({
-						a: 1
+						width: 10
 					});
 				}, null, done);
 		});
@@ -250,7 +275,7 @@ describe('index.js', () => {
 		it('should call logger.log', () => {
 			gateway.writeError(res, err);
 
-			expect(gateway.logger.log).to.have.been.calledWith(err);
+			expect(gateway.logger.log).to.have.been.calledWithExactly(err);
 		});
 
 		it('should statusCode be 500 by default', () => {
@@ -269,49 +294,55 @@ describe('index.js', () => {
 		it('should call res.write and res.end', () => {
 			gateway.writeError(res, err);
 
-			expect(res.write).to.have.been.calledWith(JSON.stringify(beautyError(err)));
+			expect(res.write).to.have.been.calledWithExactly(JSON.stringify(beautyError(err)));
 			expect(res.end).to.have.been.called;
 		});
 	});
 
 	describe('write', () => {
-		it('should statusCode be 200', () => {
+		it('should statusCode be 200 by default', () => {
 			gateway.write(res);
 
 			expect(res.statusCode).to.equal(200);
 		});
 
+		it('should statusCode be 202', () => {
+			gateway.write(res, '', 202);
+
+			expect(res.statusCode).to.equal(202);
+		});
+
 		it('should call res.write with empty string by default', () => {
 			gateway.write(res);
 
-			expect(res.write).to.have.been.calledWith('');
+			expect(res.write).to.have.been.calledWithExactly('');
 			expect(res.end).to.have.been.called;
 		});
 
 		it('should call res.write with string', () => {
 			gateway.write(res, 'a');
 
-			expect(res.write).to.have.been.calledWith('a');
+			expect(res.write).to.have.been.calledWithExactly('a');
 			expect(res.end).to.have.been.called;
 		});
 
 		it('should call res.write with stringified object', () => {
 			gateway.write(res, {
-				a: 1
+				width: 10
 			});
 
-			expect(res.write).to.have.been.calledWith(JSON.stringify({
-				a: 1
+			expect(res.write).to.have.been.calledWithExactly(JSON.stringify({
+				width: 10
 			}));
 			expect(res.end).to.have.been.called;
 		});
 
 		it('should call res.write with buffer', () => {
-			const buffer = new Buffer('a');
+			const buffer = new Buffer('');
 
 			gateway.write(res, buffer);
 
-			expect(res.write).to.have.been.calledWith(buffer);
+			expect(res.write).to.have.been.calledWithExactly(buffer);
 			expect(res.end).to.have.been.called;
 		});
 	});
@@ -388,21 +419,29 @@ describe('index.js', () => {
 		});
 	});
 
-	describe('responds404', () => {
-		beforeEach(() => {
-			sinon.stub(gateway, 'responds');
+	describe('makeError', () => {
+		it('should return 500 error', () => {
+			const err = gateway.makeError();
+
+			expect(err.statusCode).to.equal(500);
+			expect(err.message).to.equal('Unknown Error');
 		});
 
-		afterEach(() => {
-			gateway.responds.restore();
-		});
-
-		it('should call responds with 404 error', () => {
-			gateway.responds404();
-
-			const err = gateway.responds.firstCall.args[1];
+		it('should return 404 error', () => {
+			const err = gateway.makeError(404, 'Not Found');
 
 			expect(err.statusCode).to.equal(404);
+			expect(err.message).to.equal('Not Found');
+		});
+	});
+
+	describe('parseUri', () => {
+		it('should return single slash', () => {
+			expect(gateway.parseUri([])).to.equal('/');
+		});
+
+		it('should remove extra slashes', () => {
+			expect(gateway.parseUri(['///param1//','///param2///'])).to.equal('/param1/param2');
 		});
 	});
 
@@ -430,14 +469,14 @@ describe('index.js', () => {
 					host: 'http://localhost',
 					method: 'GET',
 					params: {
-						a: 1,
-						b: 2
+						width: 10,
+						height: 20
 					},
 					root: '/param1',
 					url: {
-						path: '/param1/param2?a=1&b=2',
+						path: '/param1/param2?width=10&height=20',
 						pathname: '/param1/param2',
-						query: 'a=1&b=2'
+						query: 'width=10&height=20'
 					},
 					uri: '/param2'
 				});
@@ -460,14 +499,14 @@ describe('index.js', () => {
 					host: 'http://localhost',
 					method: 'POST',
 					params: {
-						a: 1,
-						b: 2
+						width: 10,
+						height: 20
 					},
 					root: '/param1',
 					url: {
-						path: '/param1/param2?a=1&b=2',
+						path: '/param1/param2?width=10&height=20',
 						pathname: '/param1/param2',
-						query: 'a=1&b=2'
+						query: 'width=10&height=20'
 					},
 					uri: '/param2'
 				});
@@ -490,14 +529,14 @@ describe('index.js', () => {
 					host: 'http://localhost',
 					method: 'PUT',
 					params: {
-						a: 1,
-						b: 2
+						width: 10,
+						height: 20
 					},
 					root: '/param1',
 					url: {
-						path: '/param1/param2?a=1&b=2',
+						path: '/param1/param2?width=10&height=20',
 						pathname: '/param1/param2',
-						query: 'a=1&b=2'
+						query: 'width=10&height=20'
 					},
 					uri: '/param2'
 				});
@@ -524,7 +563,7 @@ describe('index.js', () => {
 				host: 'localhost',
 				method: 'GET',
 				params: {
-					a: 1
+					width: 10
 				},
 				uri: '/',
 				url: {
@@ -552,7 +591,8 @@ describe('index.js', () => {
 						expect(response).to.deep.equal({
 							base64Encoded: false,
 							body: 'result',
-							headers: {}
+							headers: {},
+							statusCode: 200
 						});
 					}, null, done);
 			});
@@ -573,7 +613,8 @@ describe('index.js', () => {
 							body: 'result',
 							headers: {
 								fromResultHeader: 'fromResultHeader'
-							}
+							},
+							statusCode: 200
 						});
 					}, null, done);
 			});
@@ -600,7 +641,8 @@ describe('index.js', () => {
 							body: 'result',
 							headers: {
 								'content-type': 'image/png'
-							}
+							},
+							statusCode: 200
 						});
 					}, null, done);
 			});
@@ -622,7 +664,8 @@ describe('index.js', () => {
 							headers: {
 								'content-type': 'image/png',
 								fromResultHeader: 'fromResultHeader'
-							}
+							},
+							statusCode: 200
 						});
 					}, null, done);
 			});
@@ -640,8 +683,17 @@ describe('index.js', () => {
 				gateway.invoke.restore();
 			});
 
-			it('should not call cache.get if req.method !== GET', done => {
-				args.method = 'POST';
+			it('should not call cache.get if shouldCache is falsy', done => {
+				gateway.shouldCache = () => false;
+
+				gateway.callLambda(lambdas['/'], args)
+					.subscribe(() => {
+						expect(gateway.cacheDriver.get).not.to.have.been.called;
+					}, null, done);
+			});
+
+			it('should not call cache.get if getCacheKey doesn\'t returns a string', done => {
+				gateway.getCacheKey = () => true;
 
 				gateway.callLambda(lambdas['/'], args)
 					.subscribe(() => {
@@ -660,45 +712,27 @@ describe('index.js', () => {
 					}, null, done);
 			});
 
-			it('should not call cache.get is hasExtension', done => {
-				args.hasExtension = true;
-
-				gateway.callLambda(lambdas['/'], args)
-					.subscribe(() => {
-						expect(gateway.cacheDriver.get).not.to.have.been.called;
-					}, null, done);
-			});
-
-			it('should not call cache.get is url.query', done => {
-				args.url.query = 'a=1';
-
-				gateway.callLambda(lambdas['/'], args)
-					.subscribe(() => {
-						expect(gateway.cacheDriver.get).not.to.have.been.called;
-					}, null, done);
-			});
-
 			it('should call invoke with args', done => {
-				args.method = 'POST';
+				gateway.shouldCache = () => false;
 
 				gateway.callLambda(lambdas['/'], args)
 					.subscribe(() => {
-						expect(gateway.invoke).to.have.been.calledWith('images', {
+						expect(gateway.invoke).to.have.been.calledWithExactly('images', {
 							method: args.method,
 							headers: args.headers,
 							body: args.body,
 							params: args.params,
 							uri: args.uri
-						});
+						}, '$LATEST');
 					}, null, done);
 			});
 
 			it('should call invoke with args.params', done => {
-				args.method = 'POST';
+				gateway.shouldCache = () => false;
 
 				gateway.callLambda(lambdas['/images'], args)
 					.subscribe(() => {
-						expect(gateway.invoke).to.have.been.calledWith('images', args.params);
+						expect(gateway.invoke).to.have.been.calledWithExactly('images', Object.assign({}, lambdas['/images'].params, args.params), '$LATEST');
 					}, null, done);
 			});
 		});
@@ -709,10 +743,9 @@ describe('index.js', () => {
 			sinon.spy(gateway, 'parseRequest');
 			sinon.stub(gateway, 'write');
 			sinon.stub(gateway, 'responds');
-			sinon.stub(gateway, 'responds404');
 			sinon.stub(gateway.cacheDriver, 'markToRefresh')
 				.returns(Observable.of([0]));
-			sinon.stub(gateway.cacheDriver, 'clear')
+			sinon.stub(gateway.cacheDriver, 'unset')
 				.returns(Observable.of([1]));
 			sinon.stub(gateway, 'callLambda')
 				.returns(Observable.of({
@@ -732,9 +765,8 @@ describe('index.js', () => {
 			gateway.parseRequest.restore();
 			gateway.write.restore();
 			gateway.responds.restore();
-			gateway.responds404.restore();
 			gateway.cacheDriver.markToRefresh.restore();
-			gateway.cacheDriver.clear.restore();
+			gateway.cacheDriver.unset.restore();
 			gateway.callLambda.restore();
 			gateway.bodyParser.restore();
 		});
@@ -777,7 +809,7 @@ describe('index.js', () => {
 			gateway.bodyParser.restore();
 			sinon.stub(gateway, 'bodyParser')
 				.callsArgWith(2, null, {
-					operation: 'clear',
+					operation: 'unset',
 					keys: ['/']
 				});
 
@@ -786,15 +818,15 @@ describe('index.js', () => {
 
 			gateway.handle(req, res);
 
-			expect(gateway.cacheDriver.clear).to.have.been.calledWithExactly({
-				operation: 'clear',
+			expect(gateway.cacheDriver.unset).to.have.been.calledWithExactly({
+				operation: 'unset',
 				namespace: 'http://localhost',
 				keys: ['/']
 			});
 		});
 
 		it('should call callLambda', () => {
-			req.url = 'http://localhost?a=1';
+			req.url = 'http://localhost?width=10';
 
 			gateway.handle(req, res);
 
@@ -807,20 +839,20 @@ describe('index.js', () => {
 				host: 'http://localhost',
 				method: 'GET',
 				params: {
-					a: 1
+					width: 10
 				},
 				root: '/',
 				url: {
-					path: '/?a=1',
+					path: '/?width=10',
 					pathname: '/',
-					query: 'a=1'
+					query: 'width=10'
 				},
 				uri: '/'
 			});
 		});
 
 		it('should call responds', () => {
-			req.url = 'http://localhost?a=1';
+			req.url = 'http://localhost?width=10';
 
 			gateway.handle(req, res);
 
@@ -834,34 +866,55 @@ describe('index.js', () => {
 			sinon.stub(gateway, 'callLambda')
 				.returns(Observable.of('body'));
 
-			req.url = 'http://localhost?a=1';
+			req.url = 'http://localhost?width=10';
 
 			gateway.handle(req, res);
 
-			expect(gateway.responds).to.have.been.calledWithExactly(res, null, 'body');
+			expect(gateway.responds).to.have.been.calledWithExactly(res, null, 'body', {}, false);
 		});
 
-		it('should call responds404 if lambda doesn\'t matches', () => {
+		it('should call responds with error if lambda doesn\'t matches', () => {
 			req.url = 'http://localhost/inexistent';
 
 			gateway.handle(req, res);
 
-			expect(gateway.responds404).to.have.been.calledWithExactly(res);
+			const err = gateway.responds.firstCall.args[1];
+
+			expect(err.statusCode).to.equal(404);
+			expect(err.message).to.equal('Not Found');
 		});
 
-		describe('error', () => {
-			it('should call responds with error', () => {
-				const err = new Error();
+		it('should call responds with error if lambda returns statusCode >= 400', () => {
+			gateway.callLambda.restore();
+			sinon.stub(gateway, 'callLambda')
+				.returns(Observable.of({
+					body: 'Forbidden Error',
+					statusCode: 401
+				}));
 
+			req.url = 'http://localhost?width=10';
+
+			gateway.handle(req, res);
+
+			const err = gateway.responds.firstCall.args[1];
+
+			expect(err.statusCode).to.equal(401);
+			expect(err.message).to.equal('Forbidden Error');
+		});
+
+		describe('internal error', () => {
+			it('should call responds with error', () => {
 				gateway.callLambda.restore();
 				sinon.stub(gateway, 'callLambda')
-					.returns(Observable.throw(err));
+					.returns(Observable.throw(new Error('Internal Error')));
 
-				req.url = 'http://localhost?a=1';
+				req.url = 'http://localhost?width=10';
 
 				gateway.handle(req, res);
 
-				expect(gateway.responds).to.have.been.calledWithExactly(res, err);
+				const err = gateway.responds.firstCall.args[1];
+
+				expect(err.message).to.equal('Internal Error');
 			});
 		});
 	});

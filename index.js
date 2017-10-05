@@ -16,6 +16,8 @@ const {
 	cloudWatchLogs
 } = require('./AWS');
 
+const DEFAULT_VERSION = '$LATEST';
+
 module.exports = class Gateway {
 	constructor(config = {}) {
 		const {
@@ -23,7 +25,9 @@ module.exports = class Gateway {
 			logGroup = process.env.LOG_GROUP,
 			logGroupDebounce = process.env.LOG_GROUP_DEBOUNCE || 5000,
 			redisUrl = process.env.REDIS_URL,
-			port = process.env.PORT || 8080
+			port = process.env.PORT || 8080,
+			shouldCache = args => true,
+			getCacheKey = args => args.url.pathname
 		} = config;
 
 		if (!lambdas) {
@@ -33,7 +37,15 @@ module.exports = class Gateway {
 		if (!logGroup) {
 			throw new Error('no logGroup provided.');
 		}
-		
+
+		if (typeof shouldCache !== 'function') {
+			throw new Error('shouldCache must be a function.');
+		}
+
+		if (typeof getCacheKey !== 'function') {
+			throw new Error('getCacheKey must be a function.');
+		}
+
 		this.logger = new Logger({
 			client: cloudWatchLogs,
 			logGroupName: logGroup,
@@ -50,6 +62,8 @@ module.exports = class Gateway {
 			})
 		}) : null;
 
+		this.shouldCache = shouldCache;
+		this.getCacheKey = getCacheKey;
 		this.bodyParser = bodyParser;
 		this.cloudWatchLogs = cloudWatchLogs;
 		this.lambda = lambda;
@@ -67,7 +81,7 @@ module.exports = class Gateway {
 		this.server.listen(port);
 	}
 
-	invoke(name, payload = {}, version = '$LATEST') {
+	invoke(name, payload = {}, version = DEFAULT_VERSION) {
 		return Observable.create(subscriber => {
 			this.lambda.invoke({
 				FunctionName: name,
@@ -127,8 +141,8 @@ module.exports = class Gateway {
 		res.end();
 	}
 
-	write(res, data = '') {
-		res.statusCode = 200;
+	write(res, data = '', statusCode = 200) {
+		res.statusCode = statusCode;
 
 		if (typeof data === 'object' || typeof data === 'number') {
 			res.write(Buffer.isBuffer(data) ? data : JSON.stringify(data));
@@ -167,11 +181,17 @@ module.exports = class Gateway {
 		this.write(res, data);
 	}
 
-	responds404(res) {
-		const err = new Error('Not Found');
-		err.statusCode = 404;
+	makeError(statusCode = 500, err = null) {
+		err = err instanceof Error ? err : new Error(err || 'Unknown Error');
+		err.statusCode = statusCode;
 
-		this.responds(res, err);
+		return err;
+	}
+
+	parseUri(uri) {
+		return `/${uri.join('/')}`
+			.replace(/\/*$/g, '')
+			.replace(/\/{2,}/g, '/') || '/';
 	}
 
 	parseRequest(req, callback) {
@@ -194,9 +214,7 @@ module.exports = class Gateway {
 				pathname: url.pathname,
 				query: url.query
 			},
-			uri: `/${uri.join('/')}`
-				.replace(/\/*$/g, '')
-				.replace(/\/{2,}/g, '/') || '/'
+			uri: this.parseUri(uri)
 		};
 
 		if (req.method === 'POST' || req.method === 'PUT') {
@@ -226,40 +244,52 @@ module.exports = class Gateway {
 			url,
 		} = args;
 
-		const cacheEligible = this.cacheDriver && method === 'GET' && !hasExtension && !url.query;
-		const doInvoke = () => this.invoke(lambda.name, lambda.paramsOnly ? params : {
+		const mergedParams = Object.assign({}, lambda.params, params);
+		const shouldCache = this.cacheDriver && this.shouldCache(args);
+		const doInvoke = () => this.invoke(lambda.name, lambda.paramsOnly ? mergedParams : {
 			method,
 			headers,
 			body,
-			params,
+			params: mergedParams,
 			uri
-		}, lambda.version);
+		}, lambda.version || DEFAULT_VERSION);
 
-		const doCache = () => this.cacheDriver.get({
-			namespace: host,
-			key: url.pathname
-		}, doInvoke);
+		const doCache = () => {
+			const key = this.getCacheKey(args);
 
-		return (cacheEligible ? doCache() : doInvoke())
+			if(typeof key !== 'string') {
+				return doInvoke();
+			}
+
+			return this.cacheDriver.get({
+				namespace: host,
+				key
+			}, doInvoke);
+		};
+
+		return (shouldCache ? doCache() : doInvoke())
 			.map(response => {
 				const {
 					body,
 					headers,
-					base64Encoded = lambda.base64Encoded || false
+					base64Encoded = lambda.base64Encoded || false,
+					statusCode = 200
 				} = response;
 
 				if (body && headers) {
 					return {
 						body,
 						headers: Object.assign({}, lambda.headers, headers),
-						base64Encoded
+						base64Encoded,
+						statusCode
 					};
 				}
 
 				return {
 					body: response,
 					headers: lambda.headers || {},
-					base64Encoded
+					base64Encoded,
+					statusCode
 				};
 			});
 	}
@@ -293,7 +323,7 @@ module.exports = class Gateway {
 					operation: cacheOperation = 'markToRefresh'
 				} = body;
 
-				if (this.cacheDriver[cacheOperation]) {
+				if (this.cacheDriver && (cacheOperation === 'markToRefresh' || cacheOperation === 'unset')) {
 					operation = this.cacheDriver[cacheOperation](Object.assign({
 							namespace: host
 						}, body))
@@ -312,17 +342,24 @@ module.exports = class Gateway {
 				return operation
 					.subscribe(
 						response => {
-							if (response.body && response.headers) {
-								return this.responds(res, null, response.body, response.headers, response.base64Encoded || false);
-							}
+							const {
+								body = null,
+								headers = {},
+								base64Encoded = false,
+								statusCode = 200
+							} = response;
 
-							this.responds(res, null, response);
+							const err = statusCode >= 400 ? this.makeError(statusCode, body || response) : null;
+
+							this.responds(res, err, body || response, headers, base64Encoded);
 						},
-						err => this.responds(res, err)
+						err => {
+							this.responds(res, err);
+						}
 					);
 			}
 
-			this.responds404(res);
+			this.responds(res, this.makeError(404, 'Not Found'));
 		});
 	}
 }

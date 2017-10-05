@@ -54,7 +54,8 @@ module.exports = class Gateway {
 
 		this.cacheDriver = redisUrl ? new CacheDriver({
 			logError: this.logger.log.bind(this.logger),
-			ttl: null,
+			ttl: process.env.CACHE_TTL || null,
+			ttr: process.env.CACHE_TTR || 7200,
 			redis: new Redis({
 				connection: {
 					url: redisUrl

@@ -82,6 +82,8 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 		process.env.REDIS_URL = 'xxxxx'; // (optional)
 		process.env.LOG_GROUP = 'xxxxx'; // (optional)
 		process.env.PORT = 8080; // (optional)
+		process.env.CACHE_TTL = null; // time to live (optional)
+		process.env.CACHE_TTR = 7200; // time to refresh (optional)
 
 		const gateway = new Gateway({
 			logGroup: 'myAppLogs', // || env.LOG_GROUP

@@ -735,6 +735,22 @@ describe('index.js', () => {
 						expect(gateway.invoke).to.have.been.calledWithExactly('images', Object.assign({}, lambdas['/images'].params, args.params), '$LATEST');
 					}, null, done);
 			});
+
+			it('should return', done => {
+				gateway.shouldCache = () => false;
+
+				gateway.callLambda(lambdas['/images'], args)
+					.subscribe(response => {
+						expect(response).to.deep.equal({
+							body: {},
+							headers: {
+								'content-type': 'image/png'
+							},
+							base64Encoded: true,
+							statusCode: 200
+						});
+					}, null, done);
+			});
 		});
 	});
 

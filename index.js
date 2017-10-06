@@ -22,7 +22,7 @@ const DEFAULT_VERSION = '$LATEST';
 module.exports = class Gateway {
 	constructor(config = {}) {
 		const {
-			auth = null,
+			auth = {},
 			lambdas,
 			logGroup = process.env.LOG_GROUP,
 			logGroupDebounce = process.env.LOG_GROUP_DEBOUNCE || 5000,
@@ -32,6 +32,10 @@ module.exports = class Gateway {
 			shouldCache = args => true,
 			getCacheKey = args => args.url.pathname
 		} = config;
+
+		if (typeof auth !== 'object' || auth === null) {
+			throw new Error('auth should be an object.');
+		}
 
 		if (!lambdas) {
 			throw new Error('no lambdas provided.');
@@ -326,37 +330,28 @@ module.exports = class Gateway {
 			const lambda = this.lambdas[root] || this.lambdas['*'];
 			const cacheRequest = method === 'POST' && url.pathname === '/cache';
 
-			let operation = this.handleAuth(args)
-				.do(args => {
-					const auth = args.params.auth;
-					const requiresAuth = lambda && lambda.auth;
-					const requiredRoles = requiresAuth && lambda.auth.roles;
-
-					if ((requiresAuth && !auth) || (requiredRoles && !requiredRoles.includes(auth.role))) {
-						throw this.makeError(403, 'Forbidden');
-					}
-				});
-
-			// cache operation
-			if (cacheRequest) {
-				const {
-					operation: cacheOperation = 'markToRefresh'
-				} = body;
-
-				if (this.cacheDriver && (cacheOperation === 'markToRefresh' || cacheOperation === 'unset')) {
-					operation = this.cacheDriver[cacheOperation](Object.assign({
-							namespace: host
-						}, body))
-						.map(response => ({
-							[cacheOperation]: response
-						}));
-				}
-			} else if (lambda) {
-				// do lambda
-				operation = operation.mergeMap(args => this.callLambda(lambda, args));
-			}
-
 			if (lambda || cacheRequest) {
+				let operation = this.handleAuth(lambda, args);
+
+				// cache operation
+				if (cacheRequest) {
+					const {
+						operation: cacheOperation = 'markToRefresh'
+					} = body;
+
+					if (this.cacheDriver && (cacheOperation === 'markToRefresh' || cacheOperation === 'unset')) {
+						operation = this.cacheDriver[cacheOperation](Object.assign({
+								namespace: host
+							}, body))
+							.map(response => ({
+								[cacheOperation]: response
+							}));
+					}
+				} else if (lambda) {
+					// do lambda
+					operation = operation.mergeMap(args => this.callLambda(lambda, args));
+				}
+
 				return operation
 					.subscribe(
 						response => {
@@ -381,8 +376,11 @@ module.exports = class Gateway {
 		});
 	}
 
-	handleAuth(args = {}) {
-		if (this.auth) {
+	handleAuth(lambda, args = {}) {
+		const requiresAuth = lambda && lambda.auth;
+		const requiredRoles = requiresAuth && lambda.auth.roles;
+
+		if (requiresAuth) {
 			const {
 				params = {},
 				headers = {},
@@ -396,41 +394,38 @@ module.exports = class Gateway {
 			} = this.auth;
 
 			const authorization = typeof getToken === 'function' ? getToken(params, headers) : (headers['authorization'] || params.token || null);
+			const payload = jwt.decode(authorization) || {};
+			const secret = typeof getSecret === 'function' ? getSecret(payload, params, headers) : getSecret;
 
-			if (authorization) {
-				const payload = jwt.decode(authorization) || {};
-				const secret = typeof getSecret === 'function' ? getSecret(payload, params, headers) : getSecret;
+			return jwt.verify(authorization, secret, options)
+				.map(auth => {
+					const authFields = allowedFields.concat(['role'])
+						.reduce((reduction, key) => {
+							if (auth[key]) {
+								reduction[key] = auth[key];
+							}
 
-				return jwt.verify(authorization, secret, options)
-					.map(auth => {
-						const authFields = allowedFields.concat(['role'])
-							.reduce((reduction, key) => {
-								if (auth[key]) {
-									reduction[key] = auth[key];
-								}
+							return reduction;
+						}, {});
 
-								return reduction;
-							}, {});
-
-						const newParams = Object.assign({}, params, {
-							auth: authFields
-						});
-
-						return Object.assign({}, args, {
-							params: newParams
-						});
+					const newParams = Object.assign({}, params, {
+						auth: authFields
 					});
-			} else {
-				const newParams = Object.assign({}, params, {
-					auth: {
-						role: 'public'
-					}
-				});
 
-				return Observable.of(Object.assign({}, args, {
-					params: newParams
-				}));
-			}
+					return Object.assign({}, args, {
+						params: newParams
+					});
+				})
+				.do(args => {
+					const auth = args.params.auth;
+
+					if(requiredRoles && !requiredRoles.includes(auth.role)) {
+						throw new Error('Forbidden');
+					}
+				})
+				.catch(err => {
+					return Observable.throw(this.makeError(403, err));
+				});
 		}
 
 		return Observable.of(args);

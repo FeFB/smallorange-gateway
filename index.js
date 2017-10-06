@@ -26,6 +26,7 @@ module.exports = class Gateway {
 			logGroupDebounce = process.env.LOG_GROUP_DEBOUNCE || 5000,
 			redisUrl = process.env.REDIS_URL,
 			port = process.env.PORT || 8080,
+			cachePrefix = process.env.CACHE_PREFIX || '',
 			shouldCache = args => true,
 			getCacheKey = args => args.url.pathname
 		} = config;
@@ -36,6 +37,10 @@ module.exports = class Gateway {
 
 		if (!logGroup) {
 			throw new Error('no logGroup provided.');
+		}
+
+		if (typeof cachePrefix !== 'string') {
+			throw new Error('cachePrefix must be a string.');
 		}
 
 		if (typeof shouldCache !== 'function') {
@@ -64,12 +69,13 @@ module.exports = class Gateway {
 			})
 		}) : null;
 
-		this.shouldCache = shouldCache;
-		this.getCacheKey = getCacheKey;
 		this.bodyParser = bodyParser;
 		this.cloudWatchLogs = cloudWatchLogs;
 		this.lambda = lambda;
 		this.lambdas = lambdas;
+		this.cachePrefix = cachePrefix;
+		this.shouldCache = shouldCache;
+		this.getCacheKey = getCacheKey;
 		this.server = http.createServer((req, res) => {
 			try {
 				this.handle(req, res);
@@ -191,7 +197,7 @@ module.exports = class Gateway {
 	}
 
 	parseUri(uri) {
-		return `/${uri.join('/')}`
+		return `/${uri}`
 			.replace(/\/*$/g, '')
 			.replace(/\/{2,}/g, '/') || '/';
 	}
@@ -199,8 +205,7 @@ module.exports = class Gateway {
 	parseRequest(req, callback) {
 		const url = parse(req.url);
 		const [,
-			root,
-			...uri
+			root
 		] = url.pathname.split('/');
 
 		const args = {
@@ -216,7 +221,7 @@ module.exports = class Gateway {
 				pathname: url.pathname,
 				query: url.query
 			},
-			uri: this.parseUri(uri)
+			uri: this.parseUri(url.pathname)
 		};
 
 		if (req.method === 'POST' || req.method === 'PUT') {
@@ -265,7 +270,7 @@ module.exports = class Gateway {
 
 			return this.cacheDriver.get({
 				namespace: host,
-				key
+				key: `${this.cachePrefix}${key}`
 			}, doInvoke);
 		};
 
@@ -317,7 +322,7 @@ module.exports = class Gateway {
 				url
 			} = args;
 
-			const lambda = this.lambdas[root];
+			const lambda = this.lambdas[root] || this.lambdas['*'];
 
 			// cache operation
 			if (method === 'POST' && url.pathname === '/cache') {

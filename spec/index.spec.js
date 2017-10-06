@@ -14,28 +14,12 @@ const {
 chai.use(sinonChai);
 
 const expect = chai.expect;
-const lambdas = {
-	'/': {
-		name: 'images'
-	},
-	'/images': {
-		name: 'images',
-		paramsOnly: true,
-		base64Encoded: true,
-		headers: {
-			'content-type': 'image/png'
-		},
-		params: {
-			width: 200,
-			height: 200
-		}
-	}
-};
 
 describe('index.js', () => {
 	let gateway;
 	let req;
 	let res;
+	let lambdas;
 
 	beforeEach(() => {
 		req = {
@@ -52,9 +36,28 @@ describe('index.js', () => {
 			end: sinon.stub(),
 		};
 
+		lambdas = {
+			'/': {
+				name: 'functionName'
+			},
+			'/root': {
+				name: 'functionName',
+				paramsOnly: true,
+				base64Encoded: true,
+				headers: {
+					'content-type': 'image/png'
+				},
+				params: {
+					width: 200,
+					height: 200
+				}
+			}
+		};
+
 		sinon.stub(http.Server.prototype, 'listen');
 
 		gateway = new Gateway({
+			cachePrefix: 'cachePrefix_',
 			logGroup: 'spec',
 			lambdas,
 			redisUrl: 'redis://localhost:6380'
@@ -74,6 +77,14 @@ describe('index.js', () => {
 			expect(() => new Gateway({
 				lambdas
 			})).to.throw('no logGroup provided.');
+		});
+
+		it('should throw if cachePrefix isn\'t a string', () => {
+			expect(() => new Gateway({
+				lambdas,
+				logGroup: 'spec',
+				cachePrefix: null
+			})).to.throw('cachePrefix must be a string.');
 		});
 
 		it('should throw if shouldCache isn\'t a function', () => {
@@ -111,6 +122,10 @@ describe('index.js', () => {
 
 		it('should have shouldCache', () => {
 			expect(gateway.shouldCache).to.be.a('function');
+		});
+
+		it('should have cachePrefix', () => {
+			expect(gateway.cachePrefix).to.be.a('string');
 		});
 
 		it('should have getCacheKey', () => {
@@ -441,7 +456,7 @@ describe('index.js', () => {
 		});
 
 		it('should remove extra slashes', () => {
-			expect(gateway.parseUri(['///param1//','///param2///'])).to.equal('/param1/param2');
+			expect(gateway.parseUri('///param1/////param2///')).to.equal('/param1/param2');
 		});
 	});
 
@@ -478,7 +493,7 @@ describe('index.js', () => {
 						pathname: '/param1/param2',
 						query: 'width=10&height=20'
 					},
-					uri: '/param2'
+					uri: '/param1/param2'
 				});
 			});
 		});
@@ -508,7 +523,7 @@ describe('index.js', () => {
 						pathname: '/param1/param2',
 						query: 'width=10&height=20'
 					},
-					uri: '/param2'
+					uri: '/param1/param2'
 				});
 			});
 		});
@@ -538,7 +553,7 @@ describe('index.js', () => {
 						pathname: '/param1/param2',
 						query: 'width=10&height=20'
 					},
-					uri: '/param2'
+					uri: '/param1/param2'
 				});
 			});
 		});
@@ -585,7 +600,7 @@ describe('index.js', () => {
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
-							key: args.url.pathname
+							key: `cachePrefix_${args.url.pathname}`
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
@@ -605,7 +620,7 @@ describe('index.js', () => {
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
-							key: args.url.pathname
+							key: `cachePrefix_${args.url.pathname}`
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
@@ -629,11 +644,11 @@ describe('index.js', () => {
 				sinon.stub(gateway.cacheDriver, 'get')
 					.returns(Observable.of(plainResult));
 
-				gateway.callLambda(lambdas['/images'], args)
+				gateway.callLambda(lambdas['/root'], args)
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
-							key: args.url.pathname
+							key: `cachePrefix_${args.url.pathname}`
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
@@ -651,11 +666,11 @@ describe('index.js', () => {
 				sinon.stub(gateway.cacheDriver, 'get')
 					.returns(Observable.of(completeResult));
 
-				gateway.callLambda(lambdas['/images'], args)
+				gateway.callLambda(lambdas['/root'], args)
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
-							key: args.url.pathname
+							key: `cachePrefix_${args.url.pathname}`
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
@@ -717,7 +732,7 @@ describe('index.js', () => {
 
 				gateway.callLambda(lambdas['/'], args)
 					.subscribe(() => {
-						expect(gateway.invoke).to.have.been.calledWithExactly('images', {
+						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', {
 							method: args.method,
 							headers: args.headers,
 							body: args.body,
@@ -730,16 +745,16 @@ describe('index.js', () => {
 			it('should call invoke with args.params', done => {
 				gateway.shouldCache = () => false;
 
-				gateway.callLambda(lambdas['/images'], args)
+				gateway.callLambda(lambdas['/root'], args)
 					.subscribe(() => {
-						expect(gateway.invoke).to.have.been.calledWithExactly('images', Object.assign({}, lambdas['/images'].params, args.params), '$LATEST');
+						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', Object.assign({}, lambdas['/root'].params, args.params), '$LATEST');
 					}, null, done);
 			});
 
 			it('should return', done => {
 				gateway.shouldCache = () => false;
 
-				gateway.callLambda(lambdas['/images'], args)
+				gateway.callLambda(lambdas['/root'], args)
 					.subscribe(response => {
 						expect(response).to.deep.equal({
 							body: {},
@@ -864,6 +879,36 @@ describe('index.js', () => {
 					query: 'width=10'
 				},
 				uri: '/'
+			});
+		});
+
+		it('should call callLambda with wildcard', () => {
+			lambdas['*'] = {
+				name: 'functionName'
+			};
+
+			req.url = 'http://localhost/param1/param2/param3?width=10';
+
+			gateway.handle(req, res);
+
+			expect(gateway.callLambda).to.have.been.calledWithExactly(lambdas['*'], {
+				body: {},
+				hasExtension: false,
+				headers: {
+					host: 'http://localhost'
+				},
+				host: 'http://localhost',
+				method: 'GET',
+				params: {
+					width: 10
+				},
+				root: '/param1',
+				url: {
+					path: '/param1/param2/param3?width=10',
+					pathname: '/param1/param2/param3',
+					query: 'width=10'
+				},
+				uri: '/param1/param2/param3'
 			});
 		});
 

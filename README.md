@@ -144,14 +144,14 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 		POST http://yourhost/cache
 		{
 			operation: 'markToRefresh',
-			namespace: 'http://http://yourhost'
+			namespace: 'http://localhost'
 		}
 
 		// or unset
 		POST http://yourhost/cache
 		{
 			operation: 'unset',
-			namespace: 'http://http://yourhost',
+			namespace: 'http://localhost',
 			keys: ['/', '/cart']
 		}
 

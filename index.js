@@ -395,11 +395,11 @@ module.exports = class Gateway {
 				options
 			} = this.auth;
 
-			const authorization = typeof getToken === 'function' ? getToken(params, headers, context) : (headers['authorization'] || params.token || null);
+			const authorization = typeof getToken === 'function' ? getToken(params, headers) : (headers['authorization'] || params.token || null);
 
 			if (authorization) {
-				const payload = jwt.decode(authorization, options) || {};
-				const secret = typeof getSecret === 'function' ? getSecret(payload, params, headers, context) : getSecret;
+				const payload = jwt.decode(authorization) || {};
+				const secret = typeof getSecret === 'function' ? getSecret(payload, params, headers) : getSecret;
 
 				return jwt.verify(authorization, secret, options)
 					.map(auth => {

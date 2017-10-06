@@ -7,6 +7,92 @@ Simple HTTP gateway for lambdas
 This gateway takes care to create a HTTP server, call lambda functions, cache into Redis according to provided strategy and log into cloudWatch.
 
 ## Sample
+
+### Setup
+		// used env vars
+		process.env.ACCESS_KEY_ID = 'xxxxx'; // (required)
+		process.env.SECRET_ACCESS_KEY = 'xxxxx'; // (required)
+		process.env.REGION = 'xxxxx'; // (optional)
+		process.env.REDIS_URL = 'xxxxx'; // (optional)
+		process.env.LOG_GROUP = 'xxxxx'; // (optional)
+		process.env.PORT = 8080; // (optional)
+		process.env.CACHE_PREFIX = ''; // (optional)
+		process.env.CACHE_TTL = 2592000; // time in seconds to live (optional) default: 30 days
+		process.env.CACHE_TTR = 7200; // time in seconds to refresh (optional) default: 2 hours
+		process.env.CACHE_TIMEOUT = 1000; // time in ms to wait before route to the origin (optional) default: 1 second
+
+		// lambdas manifest
+		const lambdas = {
+			'/': {
+				name: 'functionName' // required
+			},
+			'/functionName': {
+				name: 'functionName', // required
+				// pass just params (not all args as described below) to the lambda function
+				paramsOnly: true,
+				// default params value, it will be merged with params fetched from query, in case of key collision, the latter is going to have precedence
+				params: {
+					width: 100,
+					height: 100
+				},
+				// default base64Encoded value, lambda response can override this value, if checked, value will be converted to a buffer before returns to the browser
+				base64Encoded: true,
+				// default headers value, lambda response will be merged with this value, in case of key collision, the latter is going to have precedence
+				headers: {
+					'content-type': 'image/png'
+				}
+			},
+			'/authOnly': {
+				name: 'functionName' // required,
+				auth: true
+			},
+			'/adminOnly': {
+				name: 'functionName' // required,
+				auth: {
+					roles: ['admin']
+				}
+			},
+			'/adminOrPublic': {
+				name: 'functionName' // required,
+				auth: {
+					roles: ['admin', 'public']
+				}
+			}
+
+			// note: JWT should have role property, like:
+			{
+				role: string, // (required)
+				...anyOtherParams
+			}
+		};
+
+		const gateway = new Gateway({
+			auth: {
+				allowedFields: ['role', 'user', 'loggedAt'], // (optional)
+				getSecret: (payload, params, headers) => 'mySecret' || 'mySecret', // (required)
+				getToken(params, headers) => params.token || headers.authorization // (optional),
+				/*
+					auth options
+				 	
+					algorithms: List of strings with the names of the allowed algorithms. For instance, ["HS256", "HS384"].
+					audience: if you want to check audience (aud), provide a value here
+					issuer (optional): string or array of strings of valid values for the iss field.
+					ignoreExpiration: if true do not validate the expiration of the token.
+					ignoreNotBefore...
+					subject: if you want to check subject (sub), provide a value here
+					clockTolerance: number of seconds to tolerate when checking the nbf and exp claims, to deal with small clock differences among different servers
+				*/
+				options: {}
+			},
+			logGroup: 'myAppLogs', // || env.LOG_GROUP
+			lambdas,
+			redisUrl: 'redis://localhost:6380', // || env.REDIS_URL
+			cachePrefix: '', || // env.CACHE_PREFIX
+			shouldCache: args => args.method === 'GET' && !args.hasExtension && !args.url.query,
+			getCacheKey: args => args.url.pathname
+		});
+
+### Usage Details
 		// for a request like
 		GET http://localhost/functionName/resource?string=value&number=2&boolean=true&nulled=null
 
@@ -32,7 +118,7 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 				pathname: '/functionName/resource',
 				query: 'string=value&number=2&boolean=true&nulled=null'
 			},
-			uri: '/resource'
+			uri: '/functionName/resource'
 		}
 
 		// or just params if explicity declared at lambdas manifest with "paramsOnly = true":
@@ -52,50 +138,8 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 			statusCode: number // is statusCode >= 400, gateway is going to handle as an error following the Http/1.1 rfc (https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html)
 		}
 
-		// lambdas manifest
-		const lambdas = {
-			'/': {
-				name: 'images' // required
-			},
-			'/functionName': {
-				name: 'images', // required
-				// pass just params (not all args as described above) to the lambda function
-				paramsOnly: true,
-				// default params value, it will be merged with params fetched from query, in case of key collision, the latter is going to have precedence
-				params: {
-					width: 100,
-					height: 100
-				},
-				// default base64Encoded value, lambda response can override this value, if checked, value will be converted to a buffer before returns to the browser
-				base64Encoded: true,
-				// default headers value, lambda response will be merged with this value, in case of key collision, the latter is going to have precedence
-				headers: {
-					'content-type': 'image/png'
-				}
-			}
-		};
-		
-		// used vars
-		process.env.ACCESS_KEY_ID = 'xxxxx'; // (required)
-		process.env.SECRET_ACCESS_KEY = 'xxxxx'; // (required)
-		process.env.REGION = 'xxxxx'; // (optional)
-		process.env.REDIS_URL = 'xxxxx'; // (optional)
-		process.env.LOG_GROUP = 'xxxxx'; // (optional)
-		process.env.PORT = 8080; // (optional)
-		process.env.CACHE_TTL = null; // time in seconds to live (optional)
-		process.env.CACHE_TTR = 7200; // time in seconds to refresh (optional)
-		process.env.CACHE_TIMEOUT = 1000; // time in ms to wait before route to the origin (optional)
-
-		const gateway = new Gateway({
-			logGroup: 'myAppLogs', // || env.LOG_GROUP
-			lambdas,
-			redisUrl: 'redis://localhost:6380', // || env.REDIS_URL
-			shouldCache: args => args.method === 'GET' && !args.hasExtension && !args.url.query,
-			getCacheKey: args => args.url.pathname
-		});
-
+### Cache handling
 		// you can manually mark cache to refresh making a request like:
-
 		POST http://yourhost/cache
 		{
 			operation: 'markToRefresh',

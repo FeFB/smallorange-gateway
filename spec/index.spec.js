@@ -116,14 +116,14 @@ describe('index.js', () => {
 				name: 'functionName',
 				auth: {
 					allowedFields: ['user'],
-					getSecret: 'mySecret'
+					secret: 'mySecret'
 				}
 			},
 			'/adminRoleOnly': {
 				name: 'functionName',
 				auth: {
 					allowedFields: ['user'],
-					getSecret: 'mySecret',
+					secret: 'mySecret',
 					requiredRoles: ['admin']
 				}
 			},
@@ -131,7 +131,7 @@ describe('index.js', () => {
 				name: 'functionName',
 				auth: {
 					allowedFields: ['user'],
-					getSecret: 'mySecret',
+					secret: 'mySecret',
 					requiredRoles: ['admin', 'public']
 				}
 			}

@@ -375,16 +375,16 @@ module.exports = class Gateway {
 
 			const {
 				allowedFields = [],
-				getToken,
-				getSecret,
+				token,
+				secret,
 				options
 			} = auth;
 
-			const authorization = typeof getToken === 'function' ? getToken(params, headers) : (headers['authorization'] || params.token || null);
-			const payload = jwt.decode(authorization) || {};
-			const secret = typeof getSecret === 'function' ? getSecret(payload, params, headers) : getSecret;
+			const gotToken = typeof token === 'function' ? token(params, headers) : (headers['authorization'] || params.token || null);
+			const payload = jwt.decode(gotToken) || {};
+			const gotSecret = typeof secret === 'function' ? secret(payload, params, headers) : secret;
 
-			return jwt.verify(authorization, secret, options)
+			return jwt.verify(gotToken, gotSecret, options)
 				.map(auth => {
 					const authFields = allowedFields.concat(['role'])
 						.reduce((reduction, key) => {

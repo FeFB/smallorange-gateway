@@ -52,8 +52,8 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 				name: 'functionName' // required,
 				auth: {
 					allowedFields: ['role', 'user', 'loggedAt'], // (optional)
-					getSecret: (payload, params, headers) => 'mySecret' || 'mySecret', // (required)
-					getToken(params, headers) => params.token || headers.authorization // (optional),
+					secret: (payload, params, headers) => 'mySecret' || 'mySecret', // (required)
+					token(params, headers) => params.token || headers.authorization // (optional),
 					options: {
 						/*
 						algorithms: List of strings with the names of the allowed algorithms. For instance, ["HS256", "HS384"].

@@ -110,7 +110,8 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 				string: 'value',
 				number: 2,
 				boolean: true,
-				nulled: null
+				nulled: null,
+				auth: {} // if enabled
 			},
 			root: '/functionName',
 			url: {

@@ -3,6 +3,7 @@ const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 
 const Gateway = require('../');
+const jwt = require('../jwt');
 const Logger = require('smallorange-cloudwatch-logger');
 const CacheDriver = require('smallorange-cache-driver');
 const beautyError = require('smallorange-beauty-error');
@@ -51,12 +52,31 @@ describe('index.js', () => {
 					width: 200,
 					height: 200
 				}
+			},
+			'/withAuthOnly': {
+				name: 'functionName',
+				auth: true
+			},
+			'/withAdminRoleOnly': {
+				name: 'functionName',
+				auth: {
+					roles: ['admin']
+				}
+			},
+			'/withAdminOrPublicRole': {
+				name: 'functionName',
+				auth: {
+					roles: ['admin', 'public']
+				}
 			}
 		};
 
 		sinon.stub(http.Server.prototype, 'listen');
 
 		gateway = new Gateway({
+			auth: {
+				getSecret: 'mySecret'
+			},
 			cachePrefix: 'cachePrefix_',
 			logGroup: 'spec',
 			lambdas,
@@ -69,10 +89,6 @@ describe('index.js', () => {
 	});
 
 	describe('constructor', () => {
-		it('should throw if no lambdas provided', () => {
-			expect(() => new Gateway()).to.throw('no lambdas provided.');
-		});
-
 		it('should throw if no logGroup provided', () => {
 			expect(() => new Gateway({
 				lambdas
@@ -130,6 +146,10 @@ describe('index.js', () => {
 
 		it('should have getCacheKey', () => {
 			expect(gateway.getCacheKey).to.be.a('function');
+		});
+
+		it('should have auth', () => {
+			expect(gateway.auth).to.be.an('object');
 		});
 
 		it('should have bodyParser', () => {
@@ -824,35 +844,105 @@ describe('index.js', () => {
 			expect(gateway.parseRequest).to.have.been.calledWithExactly(req, sinon.match.func);
 		});
 
-		it('should call cacheDriver.markToRefresh as default operation', () => {
-			req.method = 'POST';
-			req.url = 'http://localhost/cache';
+		describe('with auth', () => {
+			it('should call responds with error if lambda requires auth and no one is provided', () => {
+				req.method = 'POST';
+				req.url = 'http://localhost/withAuthOnly';
 
-			gateway.handle(req, res);
+				gateway.auth = null;
+				gateway.handle(req, res);
 
-			expect(gateway.cacheDriver.markToRefresh).to.have.been.calledWithExactly({
-				namespace: 'http://localhost',
-				keys: ['/']
+				const err = gateway.responds.firstCall.args[1];
+
+				expect(err.statusCode).to.equal(403);
+				expect(err.message).to.equal('Forbidden');
+			});
+
+			it('should call responds with error if lambda requires auth.roles and no one is provided', () => {
+				req.method = 'POST';
+				req.url = 'http://localhost/withAdminRoleOnly';
+
+				gateway.auth = null;
+				gateway.handle(req, res);
+
+				const err = gateway.responds.firstCall.args[1];
+
+				expect(err.statusCode).to.equal(403);
+				expect(err.message).to.equal('Forbidden');
+			});
+
+			it('should call responds with error if lambda requires auth.roles and role doesn\'t matches', () => {
+				req.method = 'POST';
+				req.url = 'http://localhost/withAdminRoleOnly';
+
+				gateway.handle(req, res);
+
+				const err = gateway.responds.firstCall.args[1];
+
+				expect(err.statusCode).to.equal(403);
+				expect(err.message).to.equal('Forbidden');
+			});
+
+			it('should not call callLambda if lambda requires auth and no one is provided', () => {
+				req.method = 'POST';
+				req.url = 'http://localhost/withAuthOnly';
+
+				gateway.auth = null;
+				gateway.handle(req, res);
+
+				expect(gateway.callLambda).not.to.have.been.called;
+			});
+
+			it('should not call callLambda if lambda requires auth and role doesn\'t matches', () => {
+				req.method = 'POST';
+				req.url = 'http://localhost/withAdminRoleOnly';
+
+				gateway.handle(req, res);
+
+				expect(gateway.callLambda).not.to.have.been.called;
+			});
+
+			it('should call callLambda if requires auth.roles and role matches', () => {
+				req.method = 'POST';
+				req.url = 'http://localhost/withAdminOrPublicRole';
+
+				gateway.handle(req, res);
+
+				expect(gateway.callLambda).to.have.been.called;
 			});
 		});
 
-		it('should call cacheDriver with custom operation', () => {
-			gateway.bodyParser.restore();
-			sinon.stub(gateway, 'bodyParser')
-				.callsArgWith(2, null, {
-					operation: 'unset',
+		describe('cache operations', () => {
+			it('should call cacheDriver.markToRefresh as default operation', () => {
+				req.method = 'POST';
+				req.url = 'http://localhost/cache';
+
+				gateway.handle(req, res);
+
+				expect(gateway.cacheDriver.markToRefresh).to.have.been.calledWithExactly({
+					namespace: 'http://localhost',
 					keys: ['/']
 				});
+			});
 
-			req.method = 'POST';
-			req.url = 'http://localhost/cache';
+			it('should call cacheDriver with custom operation', () => {
+				gateway.bodyParser.restore();
+				sinon.stub(gateway, 'bodyParser')
+					.callsArgWith(2, null, {
+						operation: 'unset',
+						keys: ['/']
+					});
 
-			gateway.handle(req, res);
+				req.method = 'POST';
+				req.url = 'http://localhost/cache';
 
-			expect(gateway.cacheDriver.unset).to.have.been.calledWithExactly({
-				operation: 'unset',
-				namespace: 'http://localhost',
-				keys: ['/']
+				gateway.handle(req, res);
+
+				expect(gateway.cacheDriver.unset).to.have.been.calledWithExactly({
+					operation: 'unset',
+					namespace: 'http://localhost',
+					keys: ['/']
+				});
 			});
 		});
 
@@ -870,7 +960,10 @@ describe('index.js', () => {
 				host: 'http://localhost',
 				method: 'GET',
 				params: {
-					width: 10
+					width: 10,
+					auth: {
+						role: 'public'
+					}
 				},
 				root: '/',
 				url: {
@@ -882,85 +975,90 @@ describe('index.js', () => {
 			});
 		});
 
-		it('should call callLambda with wildcard', () => {
-			lambdas['*'] = {
-				name: 'functionName'
-			};
+		describe('without auth', () => {
+			it('should call callLambda with wildcard', () => {
+				lambdas['*'] = {
+					name: 'functionName'
+				};
 
-			req.url = 'http://localhost/param1/param2/param3?width=10';
+				req.url = 'http://localhost/param1/param2/param3?width=10';
 
-			gateway.handle(req, res);
+				gateway.handle(req, res);
 
-			expect(gateway.callLambda).to.have.been.calledWithExactly(lambdas['*'], {
-				body: {},
-				hasExtension: false,
-				headers: {
-					host: 'http://localhost'
-				},
-				host: 'http://localhost',
-				method: 'GET',
-				params: {
-					width: 10
-				},
-				root: '/param1',
-				url: {
-					path: '/param1/param2/param3?width=10',
-					pathname: '/param1/param2/param3',
-					query: 'width=10'
-				},
-				uri: '/param1/param2/param3'
+				expect(gateway.callLambda).to.have.been.calledWithExactly(lambdas['*'], {
+					body: {},
+					hasExtension: false,
+					headers: {
+						host: 'http://localhost'
+					},
+					host: 'http://localhost',
+					method: 'GET',
+					params: {
+						width: 10,
+						auth: {
+							role: 'public'
+						}
+					},
+					root: '/param1',
+					url: {
+						path: '/param1/param2/param3?width=10',
+						pathname: '/param1/param2/param3',
+						query: 'width=10'
+					},
+					uri: '/param1/param2/param3'
+				});
 			});
-		});
 
-		it('should call responds', () => {
-			req.url = 'http://localhost?width=10';
+			it('should call responds', () => {
+				req.url = 'http://localhost?width=10';
 
-			gateway.handle(req, res);
+				gateway.handle(req, res);
 
-			expect(gateway.responds).to.have.been.calledWithExactly(res, null, 'body', {
-				'content-type': 'image/png'
-			}, true);
-		});
+				expect(gateway.responds).to.have.been.calledWithExactly(res, null, 'body', {
+					'content-type': 'image/png'
+				}, true);
+			});
 
-		it('should call responds with plain response', () => {
-			gateway.callLambda.restore();
-			sinon.stub(gateway, 'callLambda')
-				.returns(Observable.of('body'));
+			it('should call responds with plain response', () => {
+				gateway.callLambda.restore();
+				sinon.stub(gateway, 'callLambda')
+					.returns(Observable.of('body'));
 
-			req.url = 'http://localhost?width=10';
+				req.url = 'http://localhost?width=10';
 
-			gateway.handle(req, res);
+				gateway.handle(req, res);
 
-			expect(gateway.responds).to.have.been.calledWithExactly(res, null, 'body', {}, false);
-		});
+				expect(gateway.responds).to.have.been.calledWithExactly(res, null, 'body', {}, false);
+			});
 
-		it('should call responds with error if lambda doesn\'t matches', () => {
-			req.url = 'http://localhost/inexistent';
+			it('should call responds with error if lambda doesn\'t matches', () => {
+				req.url = 'http://localhost/inexistent';
 
-			gateway.handle(req, res);
+				gateway.handle(req, res);
 
-			const err = gateway.responds.firstCall.args[1];
+				const err = gateway.responds.firstCall.args[1];
 
-			expect(err.statusCode).to.equal(404);
-			expect(err.message).to.equal('Not Found');
-		});
+				expect(err.statusCode).to.equal(404);
+				expect(err.message).to.equal('Not Found');
+			});
 
-		it('should call responds with error if lambda returns statusCode >= 400', () => {
-			gateway.callLambda.restore();
-			sinon.stub(gateway, 'callLambda')
-				.returns(Observable.of({
-					body: 'Forbidden Error',
-					statusCode: 401
-				}));
+			it('should call responds with error if lambda returns statusCode >= 400', () => {
+				gateway.callLambda.restore();
+				sinon.stub(gateway, 'callLambda')
+					.returns(Observable.of({
+						body: 'Forbidden Error',
+						statusCode: 401
+					}));
 
-			req.url = 'http://localhost?width=10';
+				req.url = 'http://localhost?width=10';
 
-			gateway.handle(req, res);
+				gateway.handle(req, res);
 
-			const err = gateway.responds.firstCall.args[1];
+				const err = gateway.responds.firstCall.args[1];
 
-			expect(err.statusCode).to.equal(401);
-			expect(err.message).to.equal('Forbidden Error');
+				expect(err.statusCode).to.equal(401);
+				expect(err.message).to.equal('Forbidden Error');
+			});
 		});
 
 		describe('internal error', () => {
@@ -977,6 +1075,157 @@ describe('index.js', () => {
 
 				expect(err.message).to.equal('Internal Error');
 			});
+		});
+	});
+
+	describe('handleAuth', () => {
+		let token;
+		let payload;
+
+		beforeEach(done => {
+			gateway.auth.allowedFields = [
+				'namespace',
+				'user'
+			];
+
+			gateway.auth.getSecret = sinon.stub()
+				.returns('mySecret');
+
+			payload = {
+				mightBeHidden: true,
+				namespace: 'spec',
+				role: 'user',
+				user: 'user-0'
+			};
+
+			jwt.sign(payload, 'mySecret')
+				.subscribe(_token => token = _token, null, done);
+		});
+
+		it('should not resolve authorization if no auth', done => {
+			gateway.auth = null;
+
+			gateway.handleAuth()
+				.subscribe(response => {
+					expect(response).to.deep.equal({});
+				}, null, done);
+		});
+
+		it('should resolve authorization by header', done => {
+			gateway.handleAuth({
+					params: {
+						param1: 'param1',
+						param2: 'param2'
+					},
+					headers: {
+						authorization: token,
+						header1: 'header1',
+						header2: 'header2'
+					}
+				})
+				.subscribe(response => {
+					expect(response).to.deep.equal({
+						params: {
+							param1: 'param1',
+							param2: 'param2',
+							auth: {
+								namespace: 'spec',
+								role: 'user',
+								user: 'user-0'
+							}
+						},
+						headers: {
+							authorization: token,
+							header1: 'header1',
+							header2: 'header2'
+						}
+					});
+				}, null, done);
+		});
+
+		it('should resolve authorization by token', done => {
+			gateway.handleAuth({
+					params: {
+						param1: 'param1',
+						param2: 'param2',
+						token
+					},
+					headers: {
+						header1: 'header1',
+						header2: 'header2'
+					}
+				})
+				.subscribe(response => {
+					expect(response).to.deep.equal({
+						params: {
+							param1: 'param1',
+							param2: 'param2',
+							auth: {
+								namespace: 'spec',
+								role: 'user',
+								user: 'user-0'
+							},
+							token
+						},
+						headers: {
+							header1: 'header1',
+							header2: 'header2'
+						}
+					});
+				}, null, done);
+		});
+
+		it('should resolve without any authorization', done => {
+			gateway.handleAuth({
+					params: {
+						param1: 'param1',
+						param2: 'param2'
+					},
+					headers: {
+						header1: 'header1',
+						header2: 'header2'
+					}
+				})
+				.subscribe(response => {
+					expect(response).to.deep.equal({
+						params: {
+							param1: 'param1',
+							param2: 'param2',
+							auth: {
+								role: 'public'
+							}
+						},
+						headers: {
+							header1: 'header1',
+							header2: 'header2'
+						}
+					});
+				}, null, done);
+		});
+
+		it('should resolve with empty params and headers', done => {
+			gateway.handleAuth()
+				.subscribe(response => {
+					expect(response).to.deep.equal({
+						params: {
+							auth: {
+								role: 'public'
+							}
+						}
+					});
+				}, null, done);
+		});
+
+		it('should throw if signature is invalid', done => {
+			gateway.handleAuth({
+					params: {
+						token: token + 1
+					}
+				})
+				.subscribe(null, err => {
+					expect(err.message).to.equal('invalid signature');
+					done();
+				});
 		});
 	});
 });

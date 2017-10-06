@@ -25,8 +25,10 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 		const lambdas = {
 			'/': {
 				name: 'functionName' // required,
-				shouldCache: args => args.method === 'GET' && !args.hasExtension && !args.url.query || {boolean},
-				getCacheKey: args => args.url.pathname
+				cache: {
+					enabled: args => args.method === 'GET' && !args.hasExtension && !args.url.query || boolean,
+					key: args => args.url.pathname  || string
+				}
 			},
 			'/functionName': {
 				name: 'functionName', // required

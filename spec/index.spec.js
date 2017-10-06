@@ -83,13 +83,17 @@ describe('index.js', () => {
 			},
 			'/cached': {
 				name: 'functionName',
-				shouldCache: args => true,
-				getCacheKey: args => args.url.pathname
+				cache: {
+					enabled: args => true,
+					key: args => args.url.pathname
+				},
 			},
 			'/cachedWithMocked': {
 				name: 'functionName',
-				shouldCache: args => true,
-				getCacheKey: args => args.url.pathname,
+				cache: {
+					enabled: args => true,
+					key: args => args.url.pathname,
+				},
 				paramsOnly: true,
 				base64: true,
 				headers: {

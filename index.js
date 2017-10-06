@@ -241,7 +241,7 @@ module.exports = class Gateway {
 		} = args;
 
 		const mergedParams = Object.assign({}, lambda.params, params);
-		const shouldCache = this.cacheDriver && (typeof lambda.shouldCache === 'function' ? lambda.shouldCache(args) : lambda.shouldCache);
+		const cacheEnabled = this.cacheDriver && lambda.cache && (typeof lambda.cache.enabled === 'function' ? lambda.cache.enabled(args) : lambda.cache.enabled);
 		const doInvoke = () => this.invoke(lambda.name, lambda.paramsOnly ? mergedParams : {
 			method,
 			headers,
@@ -251,7 +251,7 @@ module.exports = class Gateway {
 		}, lambda.version || DEFAULT_VERSION);
 
 		const doCache = () => {
-			const key = typeof lambda.getCacheKey === 'function' && lambda.getCacheKey(args);
+			const key = typeof lambda.cache.key === 'function' ? lambda.cache.key(args) : lambda.cache.key;
 
 			if (typeof key !== 'string') {
 				return doInvoke();
@@ -263,7 +263,7 @@ module.exports = class Gateway {
 			}, doInvoke);
 		};
 
-		return (shouldCache ? doCache() : doInvoke())
+		return (cacheEnabled ? doCache() : doInvoke())
 			.map(response => {
 				const {
 					body,

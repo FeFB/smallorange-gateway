@@ -100,20 +100,31 @@ describe('index.js', () => {
 					height: 200
 				}
 			},
-			'/withAuthOnly': {
+			'/wrongAuth': {
 				name: 'functionName',
 				auth: true
 			},
-			'/withAdminRoleOnly': {
+			'/authOnly': {
 				name: 'functionName',
 				auth: {
-					roles: ['admin']
+					allowedFields: ['user'],
+					getSecret: 'mySecret'
 				}
 			},
-			'/withAdminOrPublicRole': {
+			'/adminRoleOnly': {
 				name: 'functionName',
 				auth: {
-					roles: ['admin', 'public']
+					allowedFields: ['user'],
+					getSecret: 'mySecret',
+					requiredRoles: ['admin']
+				}
+			},
+			'/adminOrPublicRole': {
+				name: 'functionName',
+				auth: {
+					allowedFields: ['user'],
+					getSecret: 'mySecret',
+					requiredRoles: ['admin', 'public']
 				}
 			}
 		};
@@ -121,10 +132,6 @@ describe('index.js', () => {
 		sinon.stub(http.Server.prototype, 'listen');
 
 		gateway = new Gateway({
-			auth: {
-				allowedFields: ['user'],
-				getSecret: 'mySecret'
-			},
 			cachePrefix: 'cachePrefix_',
 			logGroup: 'spec',
 			lambdas,
@@ -137,12 +144,6 @@ describe('index.js', () => {
 	});
 
 	describe('constructor', () => {
-		it('should throw if auth isn\'t an object', () => {
-			expect(() => new Gateway({
-				auth: null
-			})).to.throw('auth should be an object.');
-		});
-
 		it('should throw if no lambdas provided', () => {
 			expect(() => new Gateway()).to.throw('no lambdas provided.');
 		});
@@ -180,10 +181,6 @@ describe('index.js', () => {
 
 		it('should have cachePrefix', () => {
 			expect(gateway.cachePrefix).to.be.a('string');
-		});
-
-		it('should have auth', () => {
-			expect(gateway.auth).to.be.an('object');
 		});
 
 		it('should have bodyParser', () => {
@@ -1038,11 +1035,11 @@ describe('index.js', () => {
 
 			describe('with auth', () => {
 				it('should call callLambda with params.auth', () => {
-					req.url = `http://localhost/withAuthOnly?width=10&token=${publicToken}`;
+					req.url = `http://localhost/authOnly?width=10&token=${publicToken}`;
 
 					gateway.handle(req, res);
 
-					expect(gateway.callLambda).to.have.been.calledWithExactly(lambdas['/withAuthOnly'], {
+					expect(gateway.callLambda).to.have.been.calledWithExactly(lambdas['/authOnly'], {
 						body: {},
 						hasExtension: false,
 						headers: {
@@ -1058,18 +1055,18 @@ describe('index.js', () => {
 							},
 							token: publicToken
 						},
-						root: '/withAuthOnly',
+						root: '/authOnly',
 						url: {
-							path: `/withAuthOnly?width=10&token=${publicToken}`,
-							pathname: '/withAuthOnly',
+							path: `/authOnly?width=10&token=${publicToken}`,
+							pathname: '/authOnly',
 							query: `width=10&token=${publicToken}`
 						},
-						uri: '/withAuthOnly'
+						uri: '/authOnly'
 					});
 				});
 
 				it('should call responds with error if auth rejected', () => {
-					req.url = `http://localhost/withAdminRoleOnly?width=10&token=${publicToken}`;
+					req.url = `http://localhost/adminRoleOnly?width=10&token=${publicToken}`;
 
 					gateway.handle(req, res);
 
@@ -1099,12 +1096,19 @@ describe('index.js', () => {
 
 	describe('handleAuth', () => {
 		it('should not resolve authorization if no auth', done => {
-			gateway.auth = null;
-
 			gateway.handleAuth()
 				.subscribe(response => {
 					expect(response).to.deep.equal({});
 				}, null, done);
+		});
+
+		it('should thow if malformed auth', done => {
+			gateway.handleAuth(lambdas['/wrongAuth'])
+				.subscribe(null, err => {
+					expect(err.message).to.equal('auth should be an object.');
+
+					done();
+				});
 		});
 
 		it('should return args if lambda doesn\'t requires auth', done => {
@@ -1140,7 +1144,7 @@ describe('index.js', () => {
 		});
 
 		it('should resolve authorization by header', done => {
-			gateway.handleAuth(lambdas['/withAuthOnly'], {
+			gateway.handleAuth(lambdas['/authOnly'], {
 					params: {
 						param1: 'param1',
 						param2: 'param2'
@@ -1171,7 +1175,7 @@ describe('index.js', () => {
 		});
 
 		it('should resolve authorization by token', done => {
-			gateway.handleAuth(lambdas['/withAuthOnly'], {
+			gateway.handleAuth(lambdas['/authOnly'], {
 					params: {
 						param1: 'param1',
 						param2: 'param2',
@@ -1201,9 +1205,9 @@ describe('index.js', () => {
 				}, null, done);
 		});
 
-		it('should resolve authorization matching roles', done => {
+		it('should resolve authorization matching requiredRoles', done => {
 			Observable.forkJoin(
-					gateway.handleAuth(lambdas['/withAdminRoleOnly'], {
+					gateway.handleAuth(lambdas['/adminRoleOnly'], {
 						params: {
 							param1: 'param1',
 							param2: 'param2'
@@ -1214,7 +1218,7 @@ describe('index.js', () => {
 							header2: 'header2'
 						}
 					}),
-					gateway.handleAuth(lambdas['/withAdminOrPublicRole'], {
+					gateway.handleAuth(lambdas['/adminOrPublicRole'], {
 						params: {
 							param1: 'param1',
 							param2: 'param2'
@@ -1230,7 +1234,7 @@ describe('index.js', () => {
 		});
 
 		it('should throw if requires auth and no one is provided', done => {
-			gateway.handleAuth(lambdas['/withAuthOnly'], {
+			gateway.handleAuth(lambdas['/authOnly'], {
 					params: {
 						param1: 'param1',
 						param2: 'param2'
@@ -1247,8 +1251,8 @@ describe('index.js', () => {
 				});
 		});
 
-		it('should throw if auth.roles doesn\'t matches', done => {
-			gateway.handleAuth(lambdas['/withAdminRoleOnly'], {
+		it('should throw if requiredRoles doesn\'t matches', done => {
+			gateway.handleAuth(lambdas['/adminRoleOnly'], {
 					params: {
 						param1: 'param1',
 						param2: 'param2'
@@ -1267,7 +1271,7 @@ describe('index.js', () => {
 		});
 
 		it('should throw if signature is invalid', done => {
-			gateway.handleAuth(lambdas['/withAuthOnly'], {
+			gateway.handleAuth(lambdas['/authOnly'], {
 					params: {
 						token: publicToken + 1
 					}

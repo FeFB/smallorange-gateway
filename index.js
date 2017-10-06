@@ -22,7 +22,6 @@ const DEFAULT_VERSION = '$LATEST';
 module.exports = class Gateway {
 	constructor(config = {}) {
 		const {
-			auth = {},
 			lambdas,
 			logGroup = process.env.LOG_GROUP,
 			logGroupDebounce = process.env.LOG_GROUP_DEBOUNCE || 5000,
@@ -30,10 +29,6 @@ module.exports = class Gateway {
 			port = process.env.PORT || 8080,
 			cachePrefix = process.env.CACHE_PREFIX || '',
 		} = config;
-
-		if (typeof auth !== 'object' || auth === null) {
-			throw new Error('auth should be an object.');
-		}
 
 		if (!lambdas) {
 			throw new Error('no lambdas provided.');
@@ -65,7 +60,6 @@ module.exports = class Gateway {
 			})
 		}) : null;
 
-		this.auth = auth;
 		this.bodyParser = bodyParser;
 		this.cloudWatchLogs = cloudWatchLogs;
 		this.lambda = lambda;
@@ -365,10 +359,14 @@ module.exports = class Gateway {
 	}
 
 	handleAuth(lambda, args = {}) {
-		const requiresAuth = lambda && lambda.auth;
-		const requiredRoles = requiresAuth && lambda.auth.roles;
+		const auth = lambda && lambda.auth;
+		const requiredRoles = auth && lambda.auth.requiredRoles;
 
-		if (requiresAuth) {
+		if (auth) {
+			if (typeof auth !== 'object') {
+				return Observable.throw(new Error('auth should be an object.'));
+			}
+
 			const {
 				params = {},
 				headers = {},
@@ -379,7 +377,7 @@ module.exports = class Gateway {
 				getToken,
 				getSecret,
 				options
-			} = this.auth;
+			} = auth;
 
 			const authorization = typeof getToken === 'function' ? getToken(params, headers) : (headers['authorization'] || params.token || null);
 			const payload = jwt.decode(authorization) || {};

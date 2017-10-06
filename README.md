@@ -24,7 +24,9 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 		// lambdas manifest
 		const lambdas = {
 			'/': {
-				name: 'functionName' // required
+				name: 'functionName' // required,
+				shouldCache: args => args.method === 'GET' && !args.hasExtension && !args.url.query,
+				getCacheKey: args => args.url.pathname
 			},
 			'/functionName': {
 				name: 'functionName', // required
@@ -88,8 +90,6 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 			lambdas,
 			redisUrl: 'redis://localhost:6380', // || env.REDIS_URL
 			cachePrefix: '', || // env.CACHE_PREFIX
-			shouldCache: args => args.method === 'GET' && !args.hasExtension && !args.url.query,
-			getCacheKey: args => args.url.pathname
 		});
 
 ### Usage Details

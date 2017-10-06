@@ -69,8 +69,27 @@ describe('index.js', () => {
 			'/': {
 				name: 'functionName'
 			},
-			'/root': {
+			'/mocked': {
 				name: 'functionName',
+				paramsOnly: true,
+				base64: true,
+				headers: {
+					'content-type': 'image/png'
+				},
+				params: {
+					width: 200,
+					height: 200
+				}
+			},
+			'/cached': {
+				name: 'functionName',
+				shouldCache: args => true,
+				getCacheKey: args => args.url.pathname
+			},
+			'/cachedWithMocked': {
+				name: 'functionName',
+				shouldCache: args => true,
+				getCacheKey: args => args.url.pathname,
 				paramsOnly: true,
 				base64: true,
 				headers: {
@@ -142,22 +161,6 @@ describe('index.js', () => {
 			})).to.throw('cachePrefix must be a string.');
 		});
 
-		it('should throw if shouldCache isn\'t a function', () => {
-			expect(() => new Gateway({
-				lambdas,
-				logGroup: 'spec',
-				shouldCache: null
-			})).to.throw('shouldCache must be a function.');
-		});
-
-		it('should throw if getCacheKey isn\'t a function', () => {
-			expect(() => new Gateway({
-				lambdas,
-				logGroup: 'spec',
-				getCacheKey: null
-			})).to.throw('getCacheKey must be a function.');
-		});
-
 		it('should have logger', () => {
 			expect(gateway.logger).to.be.instanceOf(Logger);
 		});
@@ -175,16 +178,8 @@ describe('index.js', () => {
 			expect(gateway.cacheDriver).to.be.null
 		});
 
-		it('should have shouldCache', () => {
-			expect(gateway.shouldCache).to.be.a('function');
-		});
-
 		it('should have cachePrefix', () => {
 			expect(gateway.cachePrefix).to.be.a('string');
-		});
-
-		it('should have getCacheKey', () => {
-			expect(gateway.getCacheKey).to.be.a('function');
 		});
 
 		it('should have auth', () => {
@@ -655,7 +650,7 @@ describe('index.js', () => {
 				sinon.stub(gateway.cacheDriver, 'get')
 					.returns(Observable.of(plainResult));
 
-				gateway.callLambda(lambdas['/'], args)
+				gateway.callLambda(lambdas['/cached'], args)
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
@@ -675,7 +670,7 @@ describe('index.js', () => {
 				sinon.stub(gateway.cacheDriver, 'get')
 					.returns(Observable.of(completeResult));
 
-				gateway.callLambda(lambdas['/'], args)
+				gateway.callLambda(lambdas['/cached'], args)
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
@@ -699,11 +694,11 @@ describe('index.js', () => {
 				gateway.cacheDriver.get.restore();
 			});
 
-			it('should return cached plain result', done => {
+			it('(plain result) should return', done => {
 				sinon.stub(gateway.cacheDriver, 'get')
 					.returns(Observable.of(plainResult));
 
-				gateway.callLambda(lambdas['/root'], args)
+				gateway.callLambda(lambdas['/cachedWithMocked'], args)
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
@@ -721,11 +716,11 @@ describe('index.js', () => {
 					}, null, done);
 			});
 
-			it('should return cached complete result', done => {
+			it('(complete result) should return', done => {
 				sinon.stub(gateway.cacheDriver, 'get')
 					.returns(Observable.of(completeResult));
 
-				gateway.callLambda(lambdas['/root'], args)
+				gateway.callLambda(lambdas['/cachedWithMocked'], args)
 					.subscribe(response => {
 						expect(gateway.cacheDriver.get).to.have.been.calledWithExactly({
 							namespace: args.host,
@@ -758,7 +753,8 @@ describe('index.js', () => {
 			});
 
 			it('should not call cache.get if shouldCache is falsy', done => {
-				gateway.shouldCache = () => false;
+				lambdas['/'].shouldCache = () => null;
+				lambdas['/'].getCacheKey = () => 'cacheKey';
 
 				gateway.callLambda(lambdas['/'], args)
 					.subscribe(() => {
@@ -767,7 +763,8 @@ describe('index.js', () => {
 			});
 
 			it('should not call cache.get if getCacheKey doesn\'t returns a string', done => {
-				gateway.getCacheKey = () => true;
+				lambdas['/'].shouldCache = () => true;
+				lambdas['/'].getCacheKey = () => null;
 
 				gateway.callLambda(lambdas['/'], args)
 					.subscribe(() => {
@@ -787,8 +784,6 @@ describe('index.js', () => {
 			});
 
 			it('should call invoke with args', done => {
-				gateway.shouldCache = () => false;
-
 				gateway.callLambda(lambdas['/'], args)
 					.subscribe(() => {
 						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', {
@@ -801,19 +796,38 @@ describe('index.js', () => {
 					}, null, done);
 			});
 
-			it('should call invoke with args.params', done => {
-				gateway.shouldCache = () => false;
+			it('should call invoke with params only', done => {
+				lambdas['/'].paramsOnly = true;
 
-				gateway.callLambda(lambdas['/root'], args)
+				gateway.callLambda(lambdas['/'], args)
 					.subscribe(() => {
-						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', Object.assign({}, lambdas['/root'].params, args.params), '$LATEST');
+						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', {
+							width: 10
+						}, '$LATEST');
 					}, null, done);
 			});
 
 			it('should return', done => {
-				gateway.shouldCache = () => false;
+				gateway.callLambda(lambdas['/'], args)
+					.subscribe(response => {
+						expect(response).to.deep.equal({
+							body: {},
+							headers: {},
+							base64: false,
+							statusCode: 200
+						});
+					}, null, done);
+			});
 
-				gateway.callLambda(lambdas['/root'], args)
+			it('should call invoke with mocked params', done => {
+				gateway.callLambda(lambdas['/mocked'], args)
+					.subscribe(() => {
+						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', Object.assign({}, lambdas['/mocked'].params, args.params), '$LATEST');
+					}, null, done);
+			});
+
+			it('should return mocked', done => {
+				gateway.callLambda(lambdas['/mocked'], args)
 					.subscribe(response => {
 						expect(response).to.deep.equal({
 							body: {},

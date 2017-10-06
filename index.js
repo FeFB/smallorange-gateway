@@ -29,8 +29,6 @@ module.exports = class Gateway {
 			redisUrl = process.env.REDIS_URL,
 			port = process.env.PORT || 8080,
 			cachePrefix = process.env.CACHE_PREFIX || '',
-			shouldCache = args => true,
-			getCacheKey = args => args.url.pathname
 		} = config;
 
 		if (typeof auth !== 'object' || auth === null) {
@@ -47,14 +45,6 @@ module.exports = class Gateway {
 
 		if (typeof cachePrefix !== 'string') {
 			throw new Error('cachePrefix must be a string.');
-		}
-
-		if (typeof shouldCache !== 'function') {
-			throw new Error('shouldCache must be a function.');
-		}
-
-		if (typeof getCacheKey !== 'function') {
-			throw new Error('getCacheKey must be a function.');
 		}
 
 		this.logger = new Logger({
@@ -81,8 +71,6 @@ module.exports = class Gateway {
 		this.lambda = lambda;
 		this.lambdas = lambdas;
 		this.cachePrefix = cachePrefix;
-		this.shouldCache = shouldCache;
-		this.getCacheKey = getCacheKey;
 		this.server = http.createServer((req, res) => {
 			try {
 				this.handle(req, res);
@@ -259,7 +247,7 @@ module.exports = class Gateway {
 		} = args;
 
 		const mergedParams = Object.assign({}, lambda.params, params);
-		const shouldCache = this.cacheDriver && this.shouldCache(args);
+		const shouldCache = this.cacheDriver && typeof lambda.shouldCache === 'function' && lambda.shouldCache(args);
 		const doInvoke = () => this.invoke(lambda.name, lambda.paramsOnly ? mergedParams : {
 			method,
 			headers,
@@ -269,7 +257,7 @@ module.exports = class Gateway {
 		}, lambda.version || DEFAULT_VERSION);
 
 		const doCache = () => {
-			const key = this.getCacheKey(args);
+			const key = typeof lambda.getCacheKey === 'function' && lambda.getCacheKey(args);
 
 			if (typeof key !== 'string') {
 				return doInvoke();

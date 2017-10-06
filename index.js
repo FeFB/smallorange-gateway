@@ -247,7 +247,7 @@ module.exports = class Gateway {
 		} = args;
 
 		const mergedParams = Object.assign({}, lambda.params, params);
-		const shouldCache = this.cacheDriver && typeof lambda.shouldCache === 'function' && lambda.shouldCache(args);
+		const shouldCache = this.cacheDriver && (typeof lambda.shouldCache === 'function' ? lambda.shouldCache(args) : lambda.shouldCache);
 		const doInvoke = () => this.invoke(lambda.name, lambda.paramsOnly ? mergedParams : {
 			method,
 			headers,

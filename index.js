@@ -385,18 +385,25 @@ module.exports = class Gateway {
 		if (this.auth) {
 			const {
 				params = {},
-					headers = {},
+				headers = {},
 			} = args;
 
-			const authorization = typeof this.auth.getToken === 'function' ? this.auth.getToken(params, headers, context) : (headers['authorization'] || params.token || null);
+			const {
+				allowedFields = [],
+				getToken,
+				getSecret,
+				options
+			} = this.auth;
+
+			const authorization = typeof getToken === 'function' ? getToken(params, headers, context) : (headers['authorization'] || params.token || null);
 
 			if (authorization) {
-				const payload = jwt.decode(authorization) || {};
-				const secret = typeof this.auth.getSecret === 'function' ? this.auth.getSecret(payload, params, headers, context) : this.auth.getSecret;
+				const payload = jwt.decode(authorization, options) || {};
+				const secret = typeof getSecret === 'function' ? getSecret(payload, params, headers, context) : getSecret;
 
-				return jwt.verify(authorization, secret)
+				return jwt.verify(authorization, secret, options)
 					.map(auth => {
-						const allowedFields = this.auth.allowedFields.concat(['role'])
+						const authFields = allowedFields.concat(['role'])
 							.reduce((reduction, key) => {
 								if (auth[key]) {
 									reduction[key] = auth[key];
@@ -406,7 +413,7 @@ module.exports = class Gateway {
 							}, {});
 
 						const newParams = Object.assign({}, params, {
-							auth: allowedFields
+							auth: authFields
 						});
 
 						return Object.assign({}, args, {

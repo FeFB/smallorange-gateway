@@ -1031,7 +1031,7 @@ describe('index.js', () => {
 				expect(gateway.responds).to.have.been.calledWithExactly(res, null, 'body', {}, false);
 			});
 
-			it('should call responds with error if lambda doesn\'t matches', () => {
+			it('should call responds with error if lambda doesn\'t matches and not cache operation', () => {
 				req.url = 'http://localhost/inexistent';
 
 				gateway.handle(req, res);

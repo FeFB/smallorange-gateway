@@ -44,7 +44,7 @@ describe('index.js', () => {
 			'/root': {
 				name: 'functionName',
 				paramsOnly: true,
-				base64Encoded: true,
+				base64: true,
 				headers: {
 					'content-type': 'image/png'
 				},
@@ -624,7 +624,7 @@ describe('index.js', () => {
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
-							base64Encoded: false,
+							base64: false,
 							body: 'result',
 							headers: {},
 							statusCode: 200
@@ -644,7 +644,7 @@ describe('index.js', () => {
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
-							base64Encoded: false,
+							base64: false,
 							body: 'result',
 							headers: {
 								fromResultHeader: 'fromResultHeader'
@@ -672,7 +672,7 @@ describe('index.js', () => {
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
-							base64Encoded: true,
+							base64: true,
 							body: 'result',
 							headers: {
 								'content-type': 'image/png'
@@ -694,7 +694,7 @@ describe('index.js', () => {
 						}, sinon.match.func);
 
 						expect(response).to.deep.equal({
-							base64Encoded: true,
+							base64: true,
 							body: 'result',
 							headers: {
 								'content-type': 'image/png',
@@ -781,7 +781,7 @@ describe('index.js', () => {
 							headers: {
 								'content-type': 'image/png'
 							},
-							base64Encoded: true,
+							base64: true,
 							statusCode: 200
 						});
 					}, null, done);
@@ -804,7 +804,7 @@ describe('index.js', () => {
 					headers: {
 						'content-type': 'image/png'
 					},
-					base64Encoded: true
+					base64: true
 				}));
 			sinon.stub(gateway, 'bodyParser')
 				.callsArgWith(2, null, {

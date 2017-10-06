@@ -35,8 +35,8 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 					width: 100,
 					height: 100
 				},
-				// default base64Encoded value, lambda response can override this value, if checked, value will be converted to a buffer before returns to the browser
-				base64Encoded: true,
+				// default base64 value, lambda response can override this value, if checked, value will be converted to a buffer before returns to the browser
+				base64: true,
 				// default headers value, lambda response will be merged with this value, in case of key collision, the latter is going to have precedence
 				headers: {
 					'content-type': 'image/png'
@@ -135,7 +135,7 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 			//string or stringified object,
 			body: string,
 			headers: object,
-			base64Encoded: boolean,
+			base64: boolean,
 			statusCode: number // is statusCode >= 400, gateway is going to handle as an error following the Http/1.1 rfc (https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html)
 		}
 

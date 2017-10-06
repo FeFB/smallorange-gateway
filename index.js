@@ -178,14 +178,14 @@ module.exports = class Gateway {
 			});
 	}
 
-	responds(res, err, data, headers = {}, base64Encoded = false) {
+	responds(res, err, data, headers = {}, base64 = false) {
 		this.setHeaders(res, headers);
 
 		if (err) {
 			return this.writeError(res, err);
 		}
 
-		if (data && base64Encoded) {
+		if (data && base64) {
 			data = new Buffer(data, 'base64');
 		}
 
@@ -282,7 +282,7 @@ module.exports = class Gateway {
 				const {
 					body,
 					headers,
-					base64Encoded = lambda.base64Encoded || false,
+					base64 = lambda.base64 || false,
 					statusCode = 200
 				} = response;
 
@@ -290,7 +290,7 @@ module.exports = class Gateway {
 					return {
 						body,
 						headers: Object.assign({}, lambda.headers, headers),
-						base64Encoded,
+						base64,
 						statusCode
 					};
 				}
@@ -298,7 +298,7 @@ module.exports = class Gateway {
 				return {
 					body: response,
 					headers: lambda.headers || {},
-					base64Encoded,
+					base64,
 					statusCode
 				};
 			});
@@ -363,13 +363,13 @@ module.exports = class Gateway {
 							const {
 								body = null,
 								headers = {},
-								base64Encoded = false,
+								base64 = false,
 								statusCode = 200
 							} = response;
 
 							const err = statusCode >= 400 ? this.makeError(statusCode, body || response) : null;
 
-							this.responds(res, err, body || response, headers, base64Encoded);
+							this.responds(res, err, body || response, headers, base64);
 						},
 						err => {
 							this.responds(res, err);

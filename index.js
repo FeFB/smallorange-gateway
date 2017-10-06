@@ -11,6 +11,7 @@ const {
 	Observable
 } = require('rxjs');
 
+const jwt = require('./jwt');
 const {
 	lambda,
 	cloudWatchLogs
@@ -21,6 +22,7 @@ const DEFAULT_VERSION = '$LATEST';
 module.exports = class Gateway {
 	constructor(config = {}) {
 		const {
+			auth = null,
 			lambdas,
 			logGroup = process.env.LOG_GROUP,
 			logGroupDebounce = process.env.LOG_GROUP_DEBOUNCE || 5000,
@@ -69,6 +71,7 @@ module.exports = class Gateway {
 			})
 		}) : null;
 
+		this.auth = auth;
 		this.bodyParser = bodyParser;
 		this.cloudWatchLogs = cloudWatchLogs;
 		this.lambda = lambda;
@@ -264,7 +267,7 @@ module.exports = class Gateway {
 		const doCache = () => {
 			const key = this.getCacheKey(args);
 
-			if(typeof key !== 'string') {
+			if (typeof key !== 'string') {
 				return doInvoke();
 			}
 
@@ -308,8 +311,6 @@ module.exports = class Gateway {
 		}
 
 		this.parseRequest(req, (err, args) => {
-			let operation;
-
 			if (err) {
 				return this.responds(res, err);
 			}
@@ -323,9 +324,21 @@ module.exports = class Gateway {
 			} = args;
 
 			const lambda = this.lambdas[root] || this.lambdas['*'];
+			const cacheRequest = method === 'POST' && url.pathname === '/cache';
+
+			let operation = this.handleAuth(args)
+				.do(args => {
+					const auth = args.params.auth;
+					const requiresAuth = lambda && lambda.auth;
+					const requiredRoles = requiresAuth && lambda.auth.roles;
+
+					if ((requiresAuth && !auth) || (requiredRoles && !requiredRoles.includes(auth.role))) {
+						throw this.makeError(403, 'Forbidden');
+					}
+				});
 
 			// cache operation
-			if (method === 'POST' && url.pathname === '/cache') {
+			if (cacheRequest) {
 				const {
 					operation: cacheOperation = 'markToRefresh'
 				} = body;
@@ -338,14 +351,12 @@ module.exports = class Gateway {
 							[cacheOperation]: response
 						}));
 				}
+			} else if (lambda) {
+				// do lambda
+				operation = operation.mergeMap(args => this.callLambda(lambda, args));
 			}
 
-			// do lambda
-			if (lambda) {
-				operation = this.callLambda(lambda, args);
-			}
-
-			if (operation) {
+			if (lambda || cacheRequest) {
 				return operation
 					.subscribe(
 						response => {
@@ -368,5 +379,60 @@ module.exports = class Gateway {
 
 			this.responds(res, this.makeError(404, 'Not Found'));
 		});
+	}
+
+	handleAuth(args = {}) {
+		if (this.auth) {
+			const {
+				params = {},
+				headers = {},
+			} = args;
+
+			const {
+				allowedFields = [],
+				getToken,
+				getSecret,
+				options
+			} = this.auth;
+
+			const authorization = typeof getToken === 'function' ? getToken(params, headers, context) : (headers['authorization'] || params.token || null);
+
+			if (authorization) {
+				const payload = jwt.decode(authorization, options) || {};
+				const secret = typeof getSecret === 'function' ? getSecret(payload, params, headers, context) : getSecret;
+
+				return jwt.verify(authorization, secret, options)
+					.map(auth => {
+						const authFields = allowedFields.concat(['role'])
+							.reduce((reduction, key) => {
+								if (auth[key]) {
+									reduction[key] = auth[key];
+								}
+
+								return reduction;
+							}, {});
+
+						const newParams = Object.assign({}, params, {
+							auth: authFields
+						});
+
+						return Object.assign({}, args, {
+							params: newParams
+						});
+					});
+			} else {
+				const newParams = Object.assign({}, params, {
+					auth: {
+						role: 'public'
+					}
+				});
+
+				return Observable.of(Object.assign({}, args, {
+					params: newParams
+				}));
+			}
+		}
+
+		return Observable.of(args);
 	}
 }

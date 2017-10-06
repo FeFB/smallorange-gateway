@@ -72,13 +72,15 @@ describe('index.js', () => {
 			'/mocked': {
 				name: 'functionName',
 				paramsOnly: true,
-				base64: true,
-				headers: {
-					'content-type': 'image/png'
-				},
-				params: {
-					width: 200,
-					height: 200
+				defaults: {
+					requestParams: {
+						width: 200,
+						height: 200
+					},
+					responseBase64: true,
+					responseHeaders: {
+						'content-type': 'image/png'
+					}
 				}
 			},
 			'/cached': {
@@ -95,13 +97,15 @@ describe('index.js', () => {
 					key: args => args.url.pathname,
 				},
 				paramsOnly: true,
-				base64: true,
-				headers: {
-					'content-type': 'image/png'
-				},
-				params: {
-					width: 200,
-					height: 200
+				defaults: {
+					requestParams: {
+						width: 200,
+						height: 200
+					},
+					responseBase64: true,
+					responseHeaders: {
+						'content-type': 'image/png'
+					}
 				}
 			},
 			'/wrongAuth': {
@@ -823,7 +827,7 @@ describe('index.js', () => {
 			it('should call invoke with mocked params', done => {
 				gateway.callLambda(lambdas['/mocked'], args)
 					.subscribe(() => {
-						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', Object.assign({}, lambdas['/mocked'].params, args.params), '$LATEST');
+						expect(gateway.invoke).to.have.been.calledWithExactly('functionName', Object.assign({}, lambdas['/mocked'].defaults.requestParams, args.params), '$LATEST');
 					}, null, done);
 			});
 

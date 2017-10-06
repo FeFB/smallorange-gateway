@@ -34,16 +34,18 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 				name: 'functionName', // required
 				// pass just params (not all args as described below) to the lambda function
 				paramsOnly: true,
-				// default params value, it will be merged with params fetched from query, in case of key collision, the latter is going to have precedence
-				params: {
-					width: 100,
-					height: 100
-				},
-				// default base64 value, lambda response can override this value, if checked, value will be converted to a buffer before returns to the browser
-				base64: true,
-				// default headers value, lambda response will be merged with this value, in case of key collision, the latter is going to have precedence
-				headers: {
-					'content-type': 'image/png'
+				defaults: {
+					// default request params, it will be merged with params fetched from req.query, in case of key collision, the latter is going to have precedence
+					requestParams: {
+						width: 100,
+						height: 100
+					},
+					// default response base64 value, lambda response can override this value, if checked, value will be converted to a buffer before returns to the browser
+					responseBase64: true,
+					// default response headers, lambda response headers will be merged with this value, in case of key collision, the latter is going to have precedence
+					respondeHeaders: {
+						'content-type': 'image/png'
+					}
 				}
 			},
 			'/authOnly': {

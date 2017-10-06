@@ -239,8 +239,9 @@ module.exports = class Gateway {
 			uri,
 			url,
 		} = args;
-
-		const mergedParams = Object.assign({}, lambda.params, params);
+		
+		const defaults = lambda.defaults || {};
+		const mergedParams = Object.assign({}, defaults.requestParams, params);
 		const cacheEnabled = this.cacheDriver && lambda.cache && (typeof lambda.cache.enabled === 'function' ? lambda.cache.enabled(args) : lambda.cache.enabled);
 		const doInvoke = () => this.invoke(lambda.name, lambda.paramsOnly ? mergedParams : {
 			method,
@@ -268,14 +269,14 @@ module.exports = class Gateway {
 				const {
 					body,
 					headers,
-					base64 = lambda.base64 || false,
+					base64 = defaults.responseBase64 || false,
 					statusCode = 200
 				} = response;
 
 				if (body && headers) {
 					return {
 						body,
-						headers: Object.assign({}, lambda.headers, headers),
+						headers: Object.assign({}, defaults.responseHeaders, headers),
 						base64,
 						statusCode
 					};
@@ -283,7 +284,7 @@ module.exports = class Gateway {
 
 				return {
 					body: response,
-					headers: lambda.headers || {},
+					headers: defaults.responseHeaders || {},
 					base64,
 					statusCode
 				};

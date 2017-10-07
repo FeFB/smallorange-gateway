@@ -876,15 +876,19 @@ describe('index.js', () => {
 			expect(gateway.findFunction('/param1/param2/param3/param4')).to.equal('function-3');
 			expect(gateway.findFunction('/param1/param2/param3')).to.equal('function-3');
 		});
-		
+
 		describe('partial match', () => {
 			beforeEach(() => {
-				gateway.lambdas = Object.assign({}, gateway.lambdas, {
+				gateway.lambdas = {
 					'/*': 'wildcard-0',
 					'/*/param2': 'wildcard-1',
 					'/*/param2/param3': 'wildcard-2',
 					'/*/*/param3': 'wildcard-3'
-				});
+				};
+			});
+
+			it('should return wildcard-1', () => {
+				expect(gateway.findFunction('/')).to.equal('wildcard-0');
 			});
 
 			it('should return wildcard-1', () => {
@@ -906,11 +910,15 @@ describe('index.js', () => {
 
 		describe('full wildcards', () => {
 			beforeEach(() => {
-				gateway.lambdas = Object.assign({}, gateway.lambdas, {
+				gateway.lambdas = {
 					'/*': 'wildcard-0',
 					'/*/*': 'wildcard-1',
 					'/*/*/*': 'wildcard-2'
-				});
+				};
+			});
+
+			it('should return wildcard-0', () => {
+				expect(gateway.findFunction('/')).to.equal('wildcard-0');
 			});
 
 			it('should return wildcard-0', () => {

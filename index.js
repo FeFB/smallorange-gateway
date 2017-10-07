@@ -327,8 +327,8 @@ module.exports = class Gateway {
 					break;
 				}
 			}
-		} else if(this.lambdas['/']) {
-			lambda = this.lambdas['/'];
+		} else if(this.lambdas['/'] || this.lambdas['/*']) {
+			lambda = this.lambdas['/'] || this.lambdas['/*'];
 		}
 
 		return lambda;

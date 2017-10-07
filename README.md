@@ -117,7 +117,6 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 				nulled: null,
 				auth: {} // if enabled
 			},
-			root: '/functionName',
 			url: {
 				path: '/functionName/resource?string=value&number=2&boolean=true&nulled=null',
 				pathname: '/functionName/resource',

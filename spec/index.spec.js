@@ -546,7 +546,6 @@ describe('index.js', () => {
 						width: 10,
 						height: 20
 					},
-					root: '/param1',
 					url: {
 						path: '/param1/param2?width=10&height=20',
 						pathname: '/param1/param2',
@@ -576,7 +575,6 @@ describe('index.js', () => {
 						width: 10,
 						height: 20
 					},
-					root: '/param1',
 					url: {
 						path: '/param1/param2?width=10&height=20',
 						pathname: '/param1/param2',
@@ -606,7 +604,6 @@ describe('index.js', () => {
 						width: 10,
 						height: 20
 					},
-					root: '/param1',
 					url: {
 						path: '/param1/param2?width=10&height=20',
 						pathname: '/param1/param2',
@@ -847,6 +844,45 @@ describe('index.js', () => {
 		});
 	});
 
+	describe('findFunction', () => {
+		beforeEach(() => {
+			gateway.lambdas = {
+				'/': 'function-0',
+				'/param1': 'function-1',
+				'/param1/param2': 'function-2',
+				'/param1/param2/param3': 'function-3'
+			};
+		});
+
+		it('should return null if no url matches', () => {
+			expect(gateway.findFunction('/inexistent')).to.be.null;
+		});
+
+		it('should return route 3', () => {
+			expect(gateway.findFunction('/param1/param2/param3/param4')).to.equal('function-3');
+			expect(gateway.findFunction('/param1/param2/param3')).to.equal('function-3');
+		});
+
+		it('should return route 2', () => {
+			expect(gateway.findFunction('/param1/param2/param4')).to.equal('function-2');
+			expect(gateway.findFunction('/param1/param2')).to.equal('function-2');
+		});
+
+		it('should return route 1', () => {
+			expect(gateway.findFunction('/param1/param3/param4')).to.equal('function-1');
+			expect(gateway.findFunction('/param1')).to.equal('function-1');
+		});
+
+		it('should return route 0', () => {
+			expect(gateway.findFunction('/')).to.equal('function-0');
+		});
+
+		it('should return wildcard', () => {
+			gateway.lambdas['*'] = 'wildcard';
+			expect(gateway.findFunction('/inexistent')).to.equal('wildcard');
+		});
+	});
+
 	describe('handle', () => {
 		beforeEach(() => {
 			sinon.spy(gateway, 'parseRequest');
@@ -953,39 +989,12 @@ describe('index.js', () => {
 					params: {
 						width: 10
 					},
-					root: '/',
 					url: {
 						path: '/?width=10',
 						pathname: '/',
 						query: 'width=10'
 					},
 					uri: '/'
-				});
-			});
-
-			it('should call callLambda with wildcard', () => {
-				req.url = 'http://localhost/param1/param2/param3?width=10';
-
-				gateway.handle(req, res);
-
-				expect(gateway.callLambda).to.have.been.calledWithExactly(lambdas['*'], {
-					body: {},
-					hasExtension: false,
-					headers: {
-						host: 'http://localhost'
-					},
-					host: 'http://localhost',
-					method: 'GET',
-					params: {
-						width: 10
-					},
-					root: '/param1',
-					url: {
-						path: '/param1/param2/param3?width=10',
-						pathname: '/param1/param2/param3',
-						query: 'width=10'
-					},
-					uri: '/param1/param2/param3'
 				});
 			});
 
@@ -1063,7 +1072,6 @@ describe('index.js', () => {
 							},
 							token: publicToken
 						},
-						root: '/authOnly',
 						url: {
 							path: `/authOnly?width=10&token=${publicToken}`,
 							pathname: '/authOnly',

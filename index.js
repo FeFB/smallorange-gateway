@@ -193,9 +193,6 @@ module.exports = class Gateway {
 
 	parseRequest(req, callback) {
 		const url = parse(req.url);
-		const [,
-			root
-		] = url.pathname.split('/');
 
 		const args = {
 			body: {},
@@ -204,7 +201,6 @@ module.exports = class Gateway {
 			host: req.headers.host,
 			method: req.method,
 			params: this.qs(url.query),
-			root: root ? `/${root}` : '/',
 			url: {
 				path: url.path,
 				pathname: url.pathname,
@@ -239,7 +235,7 @@ module.exports = class Gateway {
 			uri,
 			url,
 		} = args;
-		
+
 		const defaults = lambda.defaults || {};
 		const mergedParams = Object.assign({}, defaults.requestParams, params);
 		const cacheEnabled = this.cacheDriver && lambda.cache && (typeof lambda.cache.enabled === 'function' ? lambda.cache.enabled(args) : lambda.cache.enabled);
@@ -291,6 +287,33 @@ module.exports = class Gateway {
 			});
 	}
 
+	findFunction(url) {
+		let lambda = this.lambdas['*'] || null;
+
+		if (url !== '/') {
+			const paths = url.split('/')
+				.reduce((reduction, token) => {
+					return token ? reduction.concat(token) : reduction;
+				}, [])
+				.map((token, index, array) => {
+					return array.slice(0, array.length - index);
+				});
+
+			for (let i = 0; i <= paths.length - 1; i++) {
+				const path = `/${paths[i].join('/')}`;
+
+				if (this.lambdas[path]) {
+					lambda = this.lambdas[path];
+					break;
+				}
+			}
+		} else if(this.lambdas['/']) {
+			lambda = this.lambdas['/'];
+		}
+
+		return lambda;
+	}
+
 	handle(req, res) {
 		// responds options
 		if (req.method === 'OPTIONS' || req.url === '/favicon.ico') {
@@ -306,11 +329,11 @@ module.exports = class Gateway {
 				body,
 				host,
 				method,
-				root,
-				url
+				url,
+				uri
 			} = args;
 
-			const lambda = this.lambdas[root] || this.lambdas['*'];
+			const lambda = this.findFunction(uri);
 			const cacheRequest = method === 'POST' && url.pathname === '/cache';
 
 			if (lambda || cacheRequest) {
@@ -340,9 +363,9 @@ module.exports = class Gateway {
 						response => {
 							const {
 								body = null,
-								headers = {},
-								base64 = false,
-								statusCode = 200
+									headers = {},
+									base64 = false,
+									statusCode = 200
 							} = response;
 
 							const err = statusCode >= 400 ? this.makeError(statusCode, body || response) : null;
@@ -370,14 +393,14 @@ module.exports = class Gateway {
 
 			const {
 				params = {},
-				headers = {},
+					headers = {},
 			} = args;
 
 			const {
 				allowedFields = [],
-				token,
-				secret,
-				options
+					token,
+					secret,
+					options
 			} = auth;
 
 			const gotToken = typeof token === 'function' ? token(params, headers) : (headers['authorization'] || params.token || null);
@@ -406,7 +429,7 @@ module.exports = class Gateway {
 				.do(args => {
 					const auth = args.params.auth;
 
-					if(requiredRoles && !requiredRoles.includes(auth.role)) {
+					if (requiredRoles && !requiredRoles.includes(auth.role)) {
 						throw new Error('Forbidden');
 					}
 				})

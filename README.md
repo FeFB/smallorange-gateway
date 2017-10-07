@@ -80,12 +80,27 @@ This gateway takes care to create a HTTP server, call lambda functions, cache in
 					// ...
 					requiredRoles: ['admin', 'public']
 				}
-			}
-
+			},
+			
 			// note: JWT should have role property, like:
-			{
-				role: string, // (required)
-				...anyOtherParams
+			// {
+			// 	role: string, // (required)
+			// 	...anyOtherParams
+			// }
+
+			// full wildcards
+			'/*': {
+				name: 'functionName' // required,
+			},
+			'/*/*': {
+				name: 'functionName' // required,
+			},
+			// partial wildcards
+			'/*/functionName': {
+				name: 'functionName' // required,
+			},
+			'/*/*/functionName': {
+				name: 'functionName' // required,
 			}
 		};
 

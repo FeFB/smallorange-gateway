@@ -288,17 +288,37 @@ module.exports = class Gateway {
 	}
 
 	findFunction(url) {
-		let lambda = this.lambdas['*'] || null;
+		let lambda = null;
 
 		if (url !== '/') {
-			const paths = url.split('/')
+			let paths = url.split('/')
 				.reduce((reduction, token) => {
 					return token ? reduction.concat(token) : reduction;
 				}, [])
 				.map((token, index, array) => {
 					return array.slice(0, array.length - index);
 				});
+			
+			// create wildcards
+			paths = paths.reduce((reduction, path, index) => {
+				const isLast = index >= paths.length - 1;
 
+				return reduction.concat(paths.map((path, innerIndex) => {
+					const max = Math.min(index + 1, path.length)
+					const seed = new Array(max).fill('*');
+					
+					if(!isLast && (path.length === seed.length)) {
+						return null;
+					}
+
+					path = seed.concat(path.slice(max));
+
+					return path;
+				}));
+			}, paths)
+			.filter(path => path !== null);
+			
+			// look for lambda
 			for (let i = 0; i <= paths.length - 1; i++) {
 				const path = `/${paths[i].join('/')}`;
 

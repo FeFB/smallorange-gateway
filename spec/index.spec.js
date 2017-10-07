@@ -877,9 +877,53 @@ describe('index.js', () => {
 			expect(gateway.findFunction('/')).to.equal('function-0');
 		});
 
-		it('should return wildcard', () => {
-			gateway.lambdas['*'] = 'wildcard';
-			expect(gateway.findFunction('/inexistent')).to.equal('wildcard');
+		describe('partial match', () => {
+			beforeEach(() => {
+				gateway.lambdas = Object.assign({}, gateway.lambdas, {
+					'/*': 'wildcard-0',
+					'/*/param2': 'wildcard-1',
+					'/*/param2/param3': 'wildcard-2',
+					'/*/*/param3': 'wildcard-3'
+				});
+			});
+
+			it('should return wildcard-1', () => {
+				expect(gateway.findFunction('/any')).to.equal('wildcard-0');
+			});
+
+			it('should return wildcard-1', () => {
+				expect(gateway.findFunction('/any/param2')).to.equal('wildcard-1');
+			});
+
+			it('should return wildcard-2', () => {
+				expect(gateway.findFunction('/any/param2/param3')).to.equal('wildcard-2');
+			});
+
+			it('should return wildcard-3', () => {
+				expect(gateway.findFunction('/any/any/param3')).to.equal('wildcard-3');
+			});
+		});
+
+		describe('full wildcards', () => {
+			beforeEach(() => {
+				gateway.lambdas = Object.assign({}, gateway.lambdas, {
+					'/*': 'wildcard-0',
+					'/*/*': 'wildcard-1',
+					'/*/*/*': 'wildcard-2'
+				});
+			});
+
+			it('should return wildcard-0', () => {
+				expect(gateway.findFunction('/inexistent')).to.equal('wildcard-0');
+			});
+
+			it('should return wildcard-1', () => {
+				expect(gateway.findFunction('/inexistent/inexistent')).to.equal('wildcard-1');
+			});
+
+			it('should return wildcard-2', () => {
+				expect(gateway.findFunction('/inexistent/inexistent/inexistent')).to.equal('wildcard-2');
+			});
 		});
 	});
 

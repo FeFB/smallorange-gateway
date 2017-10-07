@@ -858,25 +858,25 @@ describe('index.js', () => {
 			expect(gateway.findFunction('/inexistent')).to.be.null;
 		});
 
-		it('should return route 3', () => {
-			expect(gateway.findFunction('/param1/param2/param3/param4')).to.equal('function-3');
-			expect(gateway.findFunction('/param1/param2/param3')).to.equal('function-3');
+		it('should return function-0', () => {
+			expect(gateway.findFunction('/')).to.equal('function-0');
 		});
 
-		it('should return route 2', () => {
-			expect(gateway.findFunction('/param1/param2/param4')).to.equal('function-2');
-			expect(gateway.findFunction('/param1/param2')).to.equal('function-2');
-		});
-
-		it('should return route 1', () => {
+		it('should return function-1', () => {
 			expect(gateway.findFunction('/param1/param3/param4')).to.equal('function-1');
 			expect(gateway.findFunction('/param1')).to.equal('function-1');
 		});
 
-		it('should return route 0', () => {
-			expect(gateway.findFunction('/')).to.equal('function-0');
+		it('should return function-2', () => {
+			expect(gateway.findFunction('/param1/param2/param4')).to.equal('function-2');
+			expect(gateway.findFunction('/param1/param2')).to.equal('function-2');
 		});
 
+		it('should return function-3', () => {
+			expect(gateway.findFunction('/param1/param2/param3/param4')).to.equal('function-3');
+			expect(gateway.findFunction('/param1/param2/param3')).to.equal('function-3');
+		});
+		
 		describe('partial match', () => {
 			beforeEach(() => {
 				gateway.lambdas = Object.assign({}, gateway.lambdas, {
